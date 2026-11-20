@@ -608,6 +608,14 @@ SOURCE=..\resource.h
 # End Source File
 # Begin Source File
 
+SOURCE=..\..\..\config\config.c
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\..\config\config.h
+# End Source File
+# Begin Source File
+
 SOURCE=..\resource.rc
 
 !IF  "$(CFG)" == "RSHL Config - Win32 (WCE MIPS) Release"

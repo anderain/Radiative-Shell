@@ -65,6 +65,9 @@ IDM_MENU MENU DISCARDABLE
 BEGIN
     POPUP "&File"
     BEGIN
+        MENUITEM "&Open...\tCtrl+O",            IDM_FILE_OPEN
+        MENUITEM "Save &As...\tCtrl+S",         IDM_FILE_SAVEAS
+        MENUITEM SEPARATOR
         MENUITEM "E&xit",                       IDM_FILE_EXIT
     END
     POPUP "&Help"
@@ -98,6 +101,8 @@ END
 
 IDC_RSHLCONFIG ACCELERATORS DISCARDABLE 
 BEGIN
+    "O",            IDM_FILE_OPEN,          ASCII,  ALT, NOINVERT
+    "S",            IDM_FILE_SAVEAS,        ASCII,  ALT, NOINVERT
     "/",            IDM_HELP_ABOUT,         ASCII,  ALT, NOINVERT
     VK_F4,          IDM_FILE_EXIT,          VIRTKEY, ALT, NOINVERT
 END

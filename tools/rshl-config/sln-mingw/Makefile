@@ -13,7 +13,7 @@ SHELL := cmd.exe
 .SUFFIXES:
 
 BUILD  ?= release
-SRCDIR := ..
+SRCDIRS := .. ../../../config
 OBJDIR := obj/$(BUILD)
 
 ifeq ($(BUILD),debug)
@@ -32,14 +32,16 @@ WINDRES := windres
 # Make runs through cmd.exe, so paths must use backslashes.
 MKDIR = if not exist "$(subst /,\,$1)" mkdir "$(subst /,\,$1)"
 
-CPPFLAGS := -I$(SRCDIR)
+CPPFLAGS := $(addprefix -I,$(SRCDIRS))
 CFLAGS   := $(OPT) $(DEFS) -Wall -fno-common -MMD -MP
 LDFLAGS  := -mwindows
 LDLIBS   := -lcomdlg32 -lcomctl32 -lgdi32 -luser32 -lkernel32
 
-# Every .c beside the resources is part of the build, no list to maintain.
-SRCS := $(wildcard $(SRCDIR)/*.c)
-OBJS := $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(SRCS))
+# Every .c under the source directories is part of the build, no list to keep.
+# vpath lets one pattern rule find files in either directory.
+vpath %.c $(SRCDIRS)
+SRCS := $(foreach d,$(SRCDIRS),$(wildcard $(d)/*.c))
+OBJS := $(addprefix $(OBJDIR)/,$(notdir $(SRCS:.c=.o)))
 DEPS := $(OBJS:.o=.d)
 RES  := $(OBJDIR)/resource.res
 
@@ -56,12 +58,12 @@ release:
 $(TARGET): $(OBJS) $(RES)
 	$(CC) $^ $(LDFLAGS) $(LDLIBS) -o $@
 
-$(OBJDIR)/%.o: $(SRCDIR)/%.c | $(OBJDIR)
+$(OBJDIR)/%.o: %.c | $(OBJDIR)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
 
 # -O coff is required: windres defaults to a .res file that gcc cannot link.
-$(RES): $(SRCDIR)/resource.rc $(SRCDIR)/resource.h $(SRCDIR)/app_config.ICO | $(OBJDIR)
-	$(WINDRES) -I$(SRCDIR) -O coff -i $< -o $@
+$(RES): $(word 1,$(SRCDIRS))/resource.rc $(word 1,$(SRCDIRS))/resource.h $(word 1,$(SRCDIRS))/app_config.ICO | $(OBJDIR)
+	$(WINDRES) -I$(word 1,$(SRCDIRS)) -O coff -i $< -o $@
 
 $(OBJDIR):
 	@$(call MKDIR,$@)

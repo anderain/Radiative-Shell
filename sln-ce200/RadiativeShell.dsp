@@ -955,6 +955,14 @@ SOURCE=..\frontend\rshell.h
 
 SOURCE=..\frontend\vga_palette.h
 # End Source File
+# Begin Source File
+
+SOURCE=..\config\config.c
+# End Source File
+# Begin Source File
+
+SOURCE=..\config\config.h
+# End Source File
 # End Group
 # Begin Group "Resource"
 
