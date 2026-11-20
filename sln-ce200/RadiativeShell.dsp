@@ -569,35 +569,115 @@ SOURCE=..\frontend\app.c
 
 !IF  "$(CFG)" == "RadiativeShell - Win32 (WCE MIPS) Release"
 
+DEP_CPP_APP_C=\
+	"..\frontend\pipboy.h"\
+	"..\frontend\rshell.h"\
+	
+
 !ELSEIF  "$(CFG)" == "RadiativeShell - Win32 (WCE MIPS) Debug"
+
+DEP_CPP_APP_C=\
+	"..\frontend\pipboy.h"\
+	"..\frontend\rshell.h"\
+	
 
 !ELSEIF  "$(CFG)" == "RadiativeShell - Win32 (WCE SH4) Release"
 
+DEP_CPP_APP_C=\
+	"..\frontend\pipboy.h"\
+	"..\frontend\rshell.h"\
+	
+
 !ELSEIF  "$(CFG)" == "RadiativeShell - Win32 (WCE SH4) Debug"
+
+DEP_CPP_APP_C=\
+	"..\frontend\pipboy.h"\
+	"..\frontend\rshell.h"\
+	
 
 !ELSEIF  "$(CFG)" == "RadiativeShell - Win32 (WCE SH3) Release"
 
+DEP_CPP_APP_C=\
+	"..\frontend\pipboy.h"\
+	"..\frontend\rshell.h"\
+	
+
 !ELSEIF  "$(CFG)" == "RadiativeShell - Win32 (WCE SH3) Debug"
+
+DEP_CPP_APP_C=\
+	"..\frontend\pipboy.h"\
+	"..\frontend\rshell.h"\
+	
 
 !ELSEIF  "$(CFG)" == "RadiativeShell - Win32 (WCE ARM) Release"
 
+DEP_CPP_APP_C=\
+	"..\frontend\pipboy.h"\
+	"..\frontend\rshell.h"\
+	
+
 !ELSEIF  "$(CFG)" == "RadiativeShell - Win32 (WCE ARM) Debug"
+
+DEP_CPP_APP_C=\
+	"..\frontend\pipboy.h"\
+	"..\frontend\rshell.h"\
+	
 
 !ELSEIF  "$(CFG)" == "RadiativeShell - Win32 (WCE MIPSFP) Release"
 
+DEP_CPP_APP_C=\
+	"..\frontend\pipboy.h"\
+	"..\frontend\rshell.h"\
+	
+
 !ELSEIF  "$(CFG)" == "RadiativeShell - Win32 (WCE MIPSFP) Debug"
+
+DEP_CPP_APP_C=\
+	"..\frontend\pipboy.h"\
+	"..\frontend\rshell.h"\
+	
 
 !ELSEIF  "$(CFG)" == "RadiativeShell - Win32 (WCE x86) Release"
 
+DEP_CPP_APP_C=\
+	"..\frontend\pipboy.h"\
+	"..\frontend\rshell.h"\
+	
+
 !ELSEIF  "$(CFG)" == "RadiativeShell - Win32 (WCE x86) Debug"
+
+DEP_CPP_APP_C=\
+	"..\frontend\pipboy.h"\
+	"..\frontend\rshell.h"\
+	
 
 !ELSEIF  "$(CFG)" == "RadiativeShell - Win32 (WCE x86em) Release"
 
+DEP_CPP_APP_C=\
+	"..\frontend\pipboy.h"\
+	"..\frontend\rshell.h"\
+	
+
 !ELSEIF  "$(CFG)" == "RadiativeShell - Win32 (WCE x86em) Debug"
+
+DEP_CPP_APP_C=\
+	"..\frontend\pipboy.h"\
+	"..\frontend\rshell.h"\
+	
 
 !ELSEIF  "$(CFG)" == "RadiativeShell - Win32 (WCE PPC) Release"
 
+DEP_CPP_APP_C=\
+	"..\frontend\pipboy.h"\
+	"..\frontend\rshell.h"\
+	
+
 !ELSEIF  "$(CFG)" == "RadiativeShell - Win32 (WCE PPC) Debug"
+
+DEP_CPP_APP_C=\
+	"..\frontend\pipboy.h"\
+	"..\frontend\rshell.h"\
+	
 
 !ENDIF 
 
@@ -651,6 +731,7 @@ DEP_CPP_GRAPH=\
 !ELSEIF  "$(CFG)" == "RadiativeShell - Win32 (WCE ARM) Release"
 
 DEP_CPP_GRAPH=\
+	"..\frontend\hybird_6x8.h"\
 	"..\frontend\rshell.h"\
 	"..\frontend\vga_palette.h"\
 	
@@ -658,6 +739,7 @@ DEP_CPP_GRAPH=\
 !ELSEIF  "$(CFG)" == "RadiativeShell - Win32 (WCE ARM) Debug"
 
 DEP_CPP_GRAPH=\
+	"..\frontend\hybird_6x8.h"\
 	"..\frontend\rshell.h"\
 	"..\frontend\vga_palette.h"\
 	
@@ -700,6 +782,7 @@ DEP_CPP_GRAPH=\
 !ELSEIF  "$(CFG)" == "RadiativeShell - Win32 (WCE x86em) Debug"
 
 DEP_CPP_GRAPH=\
+	"..\frontend\hybird_6x8.h"\
 	"..\frontend\rshell.h"\
 	"..\frontend\vga_palette.h"\
 	
@@ -720,6 +803,133 @@ DEP_CPP_GRAPH=\
 
 !ENDIF 
 
+# End Source File
+# Begin Source File
+
+SOURCE=..\frontend\hybird_6x8.h
+# End Source File
+# Begin Source File
+
+SOURCE=..\frontend\pipboy.c
+
+!IF  "$(CFG)" == "RadiativeShell - Win32 (WCE MIPS) Release"
+
+DEP_CPP_PIPBO=\
+	"..\frontend\pipboy.h"\
+	"..\frontend\rshell.h"\
+	
+
+!ELSEIF  "$(CFG)" == "RadiativeShell - Win32 (WCE MIPS) Debug"
+
+DEP_CPP_PIPBO=\
+	"..\frontend\pipboy.h"\
+	"..\frontend\rshell.h"\
+	
+
+!ELSEIF  "$(CFG)" == "RadiativeShell - Win32 (WCE SH4) Release"
+
+DEP_CPP_PIPBO=\
+	"..\frontend\pipboy.h"\
+	"..\frontend\rshell.h"\
+	
+
+!ELSEIF  "$(CFG)" == "RadiativeShell - Win32 (WCE SH4) Debug"
+
+DEP_CPP_PIPBO=\
+	"..\frontend\pipboy.h"\
+	"..\frontend\rshell.h"\
+	
+
+!ELSEIF  "$(CFG)" == "RadiativeShell - Win32 (WCE SH3) Release"
+
+DEP_CPP_PIPBO=\
+	"..\frontend\pipboy.h"\
+	"..\frontend\rshell.h"\
+	
+
+!ELSEIF  "$(CFG)" == "RadiativeShell - Win32 (WCE SH3) Debug"
+
+DEP_CPP_PIPBO=\
+	"..\frontend\pipboy.h"\
+	"..\frontend\rshell.h"\
+	
+
+!ELSEIF  "$(CFG)" == "RadiativeShell - Win32 (WCE ARM) Release"
+
+DEP_CPP_PIPBO=\
+	"..\frontend\pipboy.h"\
+	"..\frontend\rshell.h"\
+	
+
+!ELSEIF  "$(CFG)" == "RadiativeShell - Win32 (WCE ARM) Debug"
+
+DEP_CPP_PIPBO=\
+	"..\frontend\pipboy.h"\
+	"..\frontend\rshell.h"\
+	
+
+!ELSEIF  "$(CFG)" == "RadiativeShell - Win32 (WCE MIPSFP) Release"
+
+DEP_CPP_PIPBO=\
+	"..\frontend\pipboy.h"\
+	"..\frontend\rshell.h"\
+	
+
+!ELSEIF  "$(CFG)" == "RadiativeShell - Win32 (WCE MIPSFP) Debug"
+
+DEP_CPP_PIPBO=\
+	"..\frontend\pipboy.h"\
+	"..\frontend\rshell.h"\
+	
+
+!ELSEIF  "$(CFG)" == "RadiativeShell - Win32 (WCE x86) Release"
+
+DEP_CPP_PIPBO=\
+	"..\frontend\pipboy.h"\
+	"..\frontend\rshell.h"\
+	
+
+!ELSEIF  "$(CFG)" == "RadiativeShell - Win32 (WCE x86) Debug"
+
+DEP_CPP_PIPBO=\
+	"..\frontend\pipboy.h"\
+	"..\frontend\rshell.h"\
+	
+
+!ELSEIF  "$(CFG)" == "RadiativeShell - Win32 (WCE x86em) Release"
+
+DEP_CPP_PIPBO=\
+	"..\frontend\pipboy.h"\
+	"..\frontend\rshell.h"\
+	
+
+!ELSEIF  "$(CFG)" == "RadiativeShell - Win32 (WCE x86em) Debug"
+
+DEP_CPP_PIPBO=\
+	"..\frontend\pipboy.h"\
+	"..\frontend\rshell.h"\
+	
+
+!ELSEIF  "$(CFG)" == "RadiativeShell - Win32 (WCE PPC) Release"
+
+DEP_CPP_PIPBO=\
+	"..\frontend\pipboy.h"\
+	"..\frontend\rshell.h"\
+	
+
+!ELSEIF  "$(CFG)" == "RadiativeShell - Win32 (WCE PPC) Debug"
+
+DEP_CPP_PIPBO=\
+	"..\frontend\pipboy.h"\
+	"..\frontend\rshell.h"\
+	
+
+!ENDIF 
+
+# End Source File
+# Begin Source File
+
+SOURCE=..\frontend\pipboy.h
 # End Source File
 # Begin Source File
 
