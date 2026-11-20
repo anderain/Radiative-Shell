@@ -23,9 +23,9 @@
 /* Height of the status bar band above the bottom frame line. */
 #define PB_STATUS_HEIGHT    12
 
-/* Draw the complete shell: tabs, content area frame and status bar. The
-   content area itself stays empty apart from a placeholder. */
-void PbDrawScreen(RSGRAPH* pRsGraph, int iActiveTab);
+/* Draw the complete shell: tabs, content area and status bar. pTime is only
+   used by the clock tab; pass NULL to show the placeholder instead. */
+void PbDrawScreen(RSGRAPH* pRsGraph, int iActiveTab, const SYSTEMTIME* pTime);
 
 /* Map a virtual key to a tab index. Accepts VK_1..VK_4 and the numeric keypad
    equivalents; returns -1 for every other key. */

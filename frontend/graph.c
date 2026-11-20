@@ -211,7 +211,7 @@ BOOL RsGraphInit(RSGRAPH* pRsGraph, HDC hdc, int iWidth, int iHeight,
        the 2 bit mode keeps its fixed grey palette. */
     pRsGraph->bColors[RS_GRAY_BLACK] = 0x10;   /* 0x000000 black           */
     pRsGraph->bColors[RS_GRAY_DARK]  = 0xC0;   /* 0x004100 black green     */
-    pRsGraph->bColors[RS_GRAY_LIGHT] = 0x02;   /* 0x007100 dark green      */
+    pRsGraph->bColors[RS_GRAY_LIGHT] = 0x02;   /* 0x00AA00 mid green       */
     pRsGraph->bColors[RS_GRAY_WHITE] = 0x30;   /* 0x00FF00 pure green      */
 
     return TRUE;

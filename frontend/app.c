@@ -25,6 +25,11 @@ static BOOL         g_bGraphReady  = FALSE;
 static int          g_iOrientation = RS_DEFAULT_ORIENTATION;
 static int          g_iActiveTab   = PB_TAB_STATS;
 
+/* Time snapshot shown on the clock tab. It is captured when the tab is entered
+   and kept until the tab is left, so the page does not tick by itself. */
+static SYSTEMTIME   g_stClock;
+static BOOL         g_bClockValid  = FALSE;
+
 #ifndef VER_PLATFORM_WIN32_CE
 /* -------------------------------------------------------------------------
    Desktop only: "-o landscape|left|right" picks the screen orientation so the
@@ -125,6 +130,20 @@ static int DetectCeOrientation(HWND hWnd) {
 }
 #endif /* VER_PLATFORM_WIN32_CE */
 
+/* Take a fresh clock snapshot when the tab is entered, and drop it when the
+   tab is left so the next visit reads the clock again. */
+static void RefreshClockIfNeeded(void) {
+    if (g_iActiveTab != PB_TAB_CLOCK) {
+        g_bClockValid = FALSE;
+        return;
+    }
+
+    if (!g_bClockValid) {
+        GetLocalTime(&g_stClock);
+        g_bClockValid = TRUE;
+    }
+}
+
 /* Draw the whole shell into the frame buffer and push the result into the
    DIB. Safe to call when the graph is not ready yet. */
 static void RedrawScreen(void) {
@@ -132,7 +151,10 @@ static void RedrawScreen(void) {
         return;
     }
 
-    PbDrawScreen(&g_rsGraph, g_iActiveTab);
+    RefreshClockIfNeeded();
+
+    PbDrawScreen(&g_rsGraph, g_iActiveTab,
+                 g_bClockValid ? &g_stClock : NULL);
     RsGraphFlip(&g_rsGraph);
 }
 
