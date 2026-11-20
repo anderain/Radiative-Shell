@@ -1,0 +1,17 @@
+*.o
+*.exe
+*.html
+*.json
+*.xml
+*.log
+std*.txt
+
+*.dll
+
+*.cmd
+
+*draft*.md
+
+# Root-level Markdown: only README.md is tracked
+/*.md
+!/README.md
