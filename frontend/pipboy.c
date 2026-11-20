@@ -614,39 +614,45 @@ static void PbDrawBatteryReport(RSGRAPH* pRsGraph, const RS_POWER_INFO* pPower,
     RsGraphDrawText(pRsGraph, iValueX, iY, aFull, RS_GRAY_WHITE);
 }
 
-/* Stats page: artwork on the left, battery report on the right. The artwork is
-   vertically centred and keeps its native size; the report is centred as one
-   block in the same band. */
+/* Stats page: the battery report hugs the right side of the frame, the artwork
+   is centred in the band that is left over. Both are vertically centred. */
 static void PbDrawStatsPage(RSGRAPH* pRsGraph, const RS_POWER_INFO* pPower,
                             int iTop, int iBottom, int iLeft, int iRight) {
-    int iImgW, iImgH;
-    const int iImgX = iLeft + 8;
-    int iReportLeft;
+    int iImgW = 0, iImgH = 0;
+    int iBandRight = iRight;         /* right edge of the artwork band */
+    int iImgX;
 
-    if (RsGraphImageSize(IMAGE_WALK_BOY, &iImgW, &iImgH)) {
-        RsGraphDrawImage(pRsGraph, iImgX,
-                         iTop + (iBottom - iTop + 1 - iImgH) / 2,
-                         IMAGE_WALK_BOY, RS_GRAY_WHITE);
-        iReportLeft = iImgX + iImgW + 12;
-    }
-    else {
-        iReportLeft = iLeft + 8;
-    }
-
-    if (pPower && iReportLeft < iRight) {
-        const int iAvail = iRight - 8 - iReportLeft + 1;
+    /* The report is right aligned, so reserve its width plus the side margin
+       first and let the artwork use whatever is left. */
+    if (pPower) {
+        const int iAvail = iRight - PB_STATS_SIDE_MARGIN - iLeft + 1;
         int iReportW = iAvail;
+        int iReportRight;
 
-        /* Keep the report narrower than the band it sits in, so it does not
-           stretch all the way to the content frame. Left aligned, right after
-           the artwork. */
         if (iReportW > PB_STATS_REPORT_MAX_W) {
             iReportW = PB_STATS_REPORT_MAX_W;
         }
 
-        PbDrawBatteryReport(pRsGraph, pPower, iReportLeft,
-                            iReportLeft + iReportW - 1, iTop, iBottom);
+        iReportRight = iRight - PB_STATS_SIDE_MARGIN;
+        PbDrawBatteryReport(pRsGraph, pPower, iReportRight - iReportW + 1,
+                            iReportRight, iTop, iBottom);
+
+        iBandRight = iReportRight - iReportW - PB_STATS_GAP;
     }
+
+    /* Artwork centred in the remaining band. */
+    if (!RsGraphImageSize(IMAGE_WALK_BOY, &iImgW, &iImgH)) {
+        return;
+    }
+
+    iImgX = iLeft + (iBandRight - iLeft + 1 - iImgW) / 2;
+    if (iImgX < iLeft) {
+        iImgX = iLeft;               /* narrow screen: fall back to the left */
+    }
+
+    RsGraphDrawImage(pRsGraph, iImgX,
+                     iTop + (iBottom - iTop + 1 - iImgH) / 2,
+                     IMAGE_WALK_BOY, RS_GRAY_WHITE);
 }
 
 /* System page: a labelled list of the values GetSystemInfo reported. The

@@ -32,9 +32,15 @@
 #define PB_LOGO_MIN_GAP     6
 
 /* Widest the battery report block may get. The content column is wider than
-   the report needs, so the block is capped and the remaining space on the
-   right stays empty. */
+   the report needs, so the block stays narrower than the band it sits in. */
 #define PB_STATS_REPORT_MAX_W   150
+
+/* Padding between the content frame and the stats page contents. The report is
+   right aligned against it, the artwork is centred in the band that is left. */
+#define PB_STATS_SIDE_MARGIN    10
+
+/* Gap between the artwork band and the battery report. */
+#define PB_STATS_GAP            12
 
 /* Draw the complete shell: tabs, content area and status bar.
    pTime    - clock snapshot, only used by the clock tab, may be NULL.
