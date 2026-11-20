@@ -30,9 +30,12 @@
 #define PB_LOGO_INSET_RIGHT 2
 #define PB_LOGO_MIN_GAP     6
 
-/* Draw the complete shell: tabs, content area and status bar. pTime is only
-   used by the clock tab; pass NULL to show the placeholder instead. */
-void PbDrawScreen(RSGRAPH* pRsGraph, int iActiveTab, const SYSTEMTIME* pTime);
+/* Draw the complete shell: tabs, content area and status bar.
+   pTime    - clock snapshot, only used by the clock tab, may be NULL.
+   pSysInfo - GetSystemInfo result, only used by the system tab, may be NULL.
+   A NULL snapshot makes that tab fall back to the placeholder. */
+void PbDrawScreen(RSGRAPH* pRsGraph, int iActiveTab,
+                  const SYSTEMTIME* pTime, const SYSTEM_INFO* pSysInfo);
 
 /* Map a virtual key to a tab index. Accepts VK_1..VK_4 and the numeric keypad
    equivalents; returns -1 for every other key. */

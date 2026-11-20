@@ -66,6 +66,152 @@ static int PbClamp(int iValue, int iLo, int iHi) {
     return iValue;
 }
 
+/* dwProcessorType values and the name shown on the system page. The numbers
+   are spelled out instead of using the PROCESSOR_* macros, because the old
+   Windows CE SDKs and the desktop SDKs disagree about which ones exist. Note
+   that the Hitachi SH3/SH4 and the SHx SH3/SH4 are two distinct encodings. */
+typedef struct {
+    DWORD                  dwType;
+    const unsigned char*   pName;
+} PB_CPUTYPE;
+
+static const PB_CPUTYPE g_pbCpuTypes[] = {
+    { 386,    (const unsigned char *)"I386"        },
+    { 486,    (const unsigned char *)"I486"        },
+    { 586,    (const unsigned char *)"PENTIUM"     },
+    { 860,    (const unsigned char *)"I860"        },
+    { 2000,   (const unsigned char *)"MIPS R2000"  },
+    { 3000,   (const unsigned char *)"MIPS R3000"  },
+    { 4000,   (const unsigned char *)"MIPS R4000"  },
+    { 10003,  (const unsigned char *)"HITACHI SH3" },
+    { 10005,  (const unsigned char *)"HITACHI SH4" },
+    { 21064,  (const unsigned char *)"ALPHA 21064" },
+    { 601,    (const unsigned char *)"PPC 601"     },
+    { 603,    (const unsigned char *)"PPC 603"     },
+    { 604,    (const unsigned char *)"PPC 604"     },
+    { 620,    (const unsigned char *)"PPC 620"     },
+    { 821,    (const unsigned char *)"PPC 821"     },
+    { 103,    (const unsigned char *)"SH3"         },
+    { 104,    (const unsigned char *)"SH4"         },
+    { 2577,   (const unsigned char *)"STRONGARM"   },
+    { 1824,   (const unsigned char *)"ARM720"      },
+    { 2080,   (const unsigned char *)"ARM820"      },
+    { 2336,   (const unsigned char *)"ARM920"      }
+};
+
+/* wProcessorArchitecture values. Anything outside the table reads UNKNOWN. */
+static const unsigned char* PbArchName(WORD wArch) {
+    switch (wArch) {
+        case 0:  return (const unsigned char *)"INTEL";
+        case 1:  return (const unsigned char *)"MIPS";
+        case 2:  return (const unsigned char *)"ALPHA";
+        case 3:  return (const unsigned char *)"PPC";
+        case 4:  return (const unsigned char *)"SHX";
+        case 5:  return (const unsigned char *)"ARM";
+        case 6:  return (const unsigned char *)"IA64";
+        case 7:  return (const unsigned char *)"ALPHA64";
+        case 8:  return (const unsigned char *)"MSIL";
+        case 9:  return (const unsigned char *)"AMD64";
+        case 10: return (const unsigned char *)"IA32ONWIN64";
+        default: return (const unsigned char *)"UNKNOWN";
+    }
+}
+
+/* Name for a dwProcessorType value, or NULL when it is not in the table. */
+static const unsigned char* PbCpuTypeName(DWORD dwType) {
+    int i;
+    const int iCount = (int)(sizeof(g_pbCpuTypes) / sizeof(g_pbCpuTypes[0]));
+
+    for (i = 0; i < iCount; ++i) {
+        if (g_pbCpuTypes[i].dwType == dwType) {
+            return g_pbCpuTypes[i].pName;
+        }
+    }
+
+    return NULL;
+}
+
+/* Number of digits needed to print a value, at least one. */
+static int PbHexDigits(DWORD dwValue) {
+    int iDigits = 1;
+
+    while (dwValue >= 16) {
+        dwValue /= 16;
+        ++iDigits;
+    }
+
+    return iDigits;
+}
+
+static int PbDecDigits(DWORD dwValue) {
+    int iDigits = 1;
+
+    while (dwValue >= 10) {
+        dwValue /= 10;
+        ++iDigits;
+    }
+
+    return iDigits;
+}
+
+/* Fixed width, zero padded, upper case hexadecimal. When the value needs more
+   digits than iDigits the field simply grows, so nothing is ever truncated. */
+static unsigned char* PbPutHex(unsigned char* pOut, DWORD dwValue, int iDigits) {
+    static const unsigned char kHex[] = "0123456789ABCDEF";
+    int iTotal = PbHexDigits(dwValue);
+    int i;
+
+    if (iDigits < 1) {
+        iDigits = 1;
+    }
+    if (iTotal < iDigits) {
+        iTotal = iDigits;
+    }
+    if (iTotal > 16) {
+        iTotal = 16;
+    }
+
+    /* Fill from the right: the least significant nibble goes last. */
+    for (i = iTotal - 1; i >= 0; --i) {
+        pOut[i] = kHex[dwValue % 16];
+        dwValue /= 16;
+    }
+
+    return pOut + iTotal;
+}
+
+/* Fixed width decimal, zero padded, growing when the value needs it. */
+static unsigned char* PbPutDec(unsigned char* pOut, DWORD dwValue, int iDigits) {
+    int iTotal = PbDecDigits(dwValue);
+    int i;
+
+    if (iDigits < 1) {
+        iDigits = 1;
+    }
+    if (iTotal < iDigits) {
+        iTotal = iDigits;
+    }
+    if (iTotal > 16) {
+        iTotal = 16;
+    }
+
+    for (i = iTotal - 1; i >= 0; --i) {
+        pOut[i] = (unsigned char)('0' + (dwValue % 10));
+        dwValue /= 10;
+    }
+
+    return pOut + iTotal;
+}
+
+/* Append a NUL terminated string and return the advanced pointer. */
+static unsigned char* PbPutStr(unsigned char* pOut, const unsigned char* pText) {
+    while (*pText) {
+        *pOut++ = *pText++;
+    }
+
+    return pOut;
+}
+
 /* Width in pixels of a narrow string in the built in font. */
 static int PbTextWidth(const unsigned char* pText) {
     int iLen = 0;
@@ -356,7 +502,96 @@ static void PbDrawStatsPage(RSGRAPH* pRsGraph, int iTop, int iBottom,
                      IMAGE_WALK_BOY, RS_GRAY_WHITE);
 }
 
+/* System page: a labelled list of the values GetSystemInfo reported. The
+   block is vertically centred, the label column has a fixed width so the
+   values line up. */
+static void PbDrawSystemPage(RSGRAPH* pRsGraph, const SYSTEM_INFO* pSysInfo,
+                             int iTop, int iBottom, int iLeft, int iRight) {
+    static const unsigned char* const kLabels[8] = {
+        (const unsigned char *)"ARCH",
+        (const unsigned char *)"TYPE",
+        (const unsigned char *)"LEVEL",
+        (const unsigned char *)"REVISION",
+        (const unsigned char *)"CPUS",
+        (const unsigned char *)"MASK",
+        (const unsigned char *)"PAGE",
+        (const unsigned char *)"GRAN"
+    };
+    unsigned char aValues[8][24];
+    const int iW = iRight - iLeft + 1;
+    const int iRowH = RS_FONT_HEIGHT + 2;
+    const int iRowsH = 7 * iRowH + RS_FONT_HEIGHT;
+    const int iBlockH = RS_FONT_HEIGHT + 6 + 1 + 8 + iRowsH;
+    const int iLabelX = iLeft + 8;
+    const int iValueX = iLabelX + 10 * RS_FONT_WIDTH;
+    int i, iY, iRuleW;
+    unsigned char* p;
+
+    /* Column 1: architecture name. */
+    p = PbPutStr(aValues[0], PbArchName(pSysInfo->wProcessorArchitecture));
+    *p = 0;
+
+    /* Column 2: processor type name, hex fallback for unknown values. */
+    {
+        const unsigned char* pName = PbCpuTypeName(pSysInfo->dwProcessorType);
+
+        if (pName) {
+            p = PbPutStr(aValues[1], pName);
+        }
+        else {
+            /* Unknown value: show it as 0xNNNN so it is still informative. */
+            aValues[1][0] = '0';
+            aValues[1][1] = 'x';
+            p = PbPutHex(aValues[1] + 2, pSysInfo->dwProcessorType, 4);
+        }
+        *p = 0;
+    }
+
+    p = PbPutDec(aValues[2], (DWORD)pSysInfo->wProcessorLevel, 1);
+    *p = 0;
+
+    p = PbPutHex(aValues[3], (DWORD)pSysInfo->wProcessorRevision, 4);
+    *p = 0;
+
+    p = PbPutDec(aValues[4], pSysInfo->dwNumberOfProcessors, 1);
+    *p = 0;
+
+    p = PbPutHex(aValues[5], pSysInfo->dwActiveProcessorMask, 8);
+    *p = 0;
+
+    p = PbPutHex(aValues[6], pSysInfo->dwPageSize, 8);
+    *p = 0;
+
+    p = PbPutHex(aValues[7], pSysInfo->dwAllocationGranularity, 8);
+    *p = 0;
+
+    iY = iTop + (iBottom - iTop + 1 - iBlockH) / 2;
+    if (iY < iTop + 1) {
+        iY = iTop + 1;
+    }
+
+    PbDrawTextCentered(pRsGraph, iLeft + 1, iY, iW - 2,
+                       (const unsigned char *)"SYSTEM INFO", RS_GRAY_LIGHT);
+
+    iY += RS_FONT_HEIGHT + 6;
+
+    iRuleW = (iW * 2 / 5) & ~1;
+    if (iRuleW < 8) {
+        iRuleW = 8;
+    }
+    RsGraphHLine(pRsGraph, iLeft + (iW - iRuleW) / 2, iY, iRuleW, RS_GRAY_LIGHT);
+
+    iY += 1 + 8;
+
+    for (i = 0; i < 8; ++i) {
+        RsGraphDrawText(pRsGraph, iLabelX, iY, kLabels[i], RS_GRAY_LIGHT);
+        RsGraphDrawText(pRsGraph, iValueX, iY, aValues[i], RS_GRAY_WHITE);
+        iY += iRowH;
+    }
+}
+
 static void PbDrawContent(RSGRAPH* pRsGraph, int iActiveTab, const SYSTEMTIME* pTime,
+                          const SYSTEM_INFO* pSysInfo,
                           int iTop, int iBottom, int iLeft, int iRight) {
     const int iW = iRight - iLeft + 1;
     const int iH = iBottom - iTop + 1;
@@ -366,6 +601,11 @@ static void PbDrawContent(RSGRAPH* pRsGraph, int iActiveTab, const SYSTEMTIME* p
 
     if (iActiveTab == PB_TAB_STATS) {
         PbDrawStatsPage(pRsGraph, iTop, iBottom, iLeft, iRight);
+        return;
+    }
+
+    if (iActiveTab == PB_TAB_SYSTEM && pSysInfo) {
+        PbDrawSystemPage(pRsGraph, pSysInfo, iTop, iBottom, iLeft, iRight);
         return;
     }
 
@@ -411,7 +651,8 @@ static void PbDrawStatus(RSGRAPH* pRsGraph, int iY, int iLeft, int iRight) {
     }
 }
 
-void PbDrawScreen(RSGRAPH* pRsGraph, int iActiveTab, const SYSTEMTIME* pTime) {
+void PbDrawScreen(RSGRAPH* pRsGraph, int iActiveTab,
+                  const SYSTEMTIME* pTime, const SYSTEM_INFO* pSysInfo) {
     const int iW = pRsGraph->iWidth;
     const int iH = pRsGraph->iHeight;
     const int iFrameX  = PB_OUTER_MARGIN;
@@ -451,7 +692,7 @@ void PbDrawScreen(RSGRAPH* pRsGraph, int iActiveTab, const SYSTEMTIME* pTime) {
     PbDrawTabBar(pRsGraph, iActiveTab, PB_TAB_LEFT, iTabLimit);
 
     if (iContentBottom > iContentTop) {
-        PbDrawContent(pRsGraph, iActiveTab, pTime,
+        PbDrawContent(pRsGraph, iActiveTab, pTime, pSysInfo,
                       iContentTop, iContentBottom, iInnerL + 4, iInnerR - 4);
     }
 

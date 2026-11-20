@@ -30,6 +30,11 @@ static int          g_iActiveTab   = PB_TAB_STATS;
 static SYSTEMTIME   g_stClock;
 static BOOL         g_bClockValid  = FALSE;
 
+/* System information. It does not change during a session, so it is read once
+   at startup. */
+static SYSTEM_INFO  g_stSysInfo;
+static BOOL         g_bSysInfoValid = FALSE;
+
 #ifndef VER_PLATFORM_WIN32_CE
 /* -------------------------------------------------------------------------
    Desktop only: "-o landscape|left|right" picks the screen orientation so the
@@ -154,7 +159,8 @@ static void RedrawScreen(void) {
     RefreshClockIfNeeded();
 
     PbDrawScreen(&g_rsGraph, g_iActiveTab,
-                 g_bClockValid ? &g_stClock : NULL);
+                 g_bClockValid ? &g_stClock : NULL,
+                 g_bSysInfoValid ? &g_stSysInfo : NULL);
     RsGraphFlip(&g_rsGraph);
 }
 
@@ -207,6 +213,10 @@ static BOOL InitGraph(HWND hWnd) {
        Switching between the two portrait rotations only rebinds fnFlip, which
        never touches hdcMainWin, so it stays NULL on purpose. */
     g_rsGraph.hdcMainWin = NULL;
+
+    /* System information is static for the lifetime of the process. */
+    GetSystemInfo(&g_stSysInfo);
+    g_bSysInfoValid = TRUE;
 
     g_bGraphReady = TRUE;
     RedrawScreen();
