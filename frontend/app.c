@@ -360,7 +360,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
     /* The graph needs the final orientation, so build it here rather than in
        WM_CREATE. */
     if (InitGraph(hWnd)) {
-        InvalidateRect(hWnd, NULL, TRUE);
+        InvalidateRect(hWnd, NULL, FALSE);
     }
 
     return TRUE;
@@ -391,7 +391,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                 case VK_UP:
                     g_iActiveTab = PbNextTab(g_iActiveTab);
                     RedrawScreen();
-                    InvalidateRect(hWnd, NULL, TRUE);
+                    InvalidateRect(hWnd, NULL, FALSE);
                     break;
                 case VK_DOWN:
                     /* Auto repeat would flip the picture dozens of times per
@@ -399,7 +399,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                     if (!(lParam & 0x40000000)) {
                         TogglePortraitOrientation();
                         RedrawScreen();
-                        InvalidateRect(hWnd, NULL, TRUE);
+                        InvalidateRect(hWnd, NULL, FALSE);
                     }
                     break;
                 default: {
@@ -408,7 +408,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                     if (iTab >= 0 && iTab != g_iActiveTab) {
                         g_iActiveTab = iTab;
                         RedrawScreen();
-                        InvalidateRect(hWnd, NULL, TRUE);
+                        InvalidateRect(hWnd, NULL, FALSE);
                     }
                     break;
                 }
