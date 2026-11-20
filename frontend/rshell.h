@@ -46,16 +46,16 @@ void GetDeviceInfo(HDC hdc, RSDEVICEINFO* pDeviceInfo);
    or an 8 bit DIB; in the 8 bit case bColors maps the frame buffer value to
    an index of the VGA palette. */
 typedef struct _RSGRAPH {
-    int         iColorMode;     /* GRAPH_GRAYSCALE or GRAPH_VGA_COLOR */
-    int         iOrientation;   /* one of ORIENTATION_*               */
-    int         iWidth;         /* logical width  in pixels           */
-    int         iHeight;        /* logical height in pixels           */
-    BYTE *      pFrameBuf;      /* one byte per pixel, value 0..3     */
-    BYTE        bColors[4];     /* frame buffer value -> palette index */
+    int         iColorMode;     /* GRAPH_GRAYSCALE or GRAPH_VGA_COLOR   */
+    int         iOrientation;   /* one of ORIENTATION_*                 */
+    int         iWidth;         /* logical width  in pixels             */
+    int         iHeight;        /* logical height in pixels             */
+    BYTE *      pFrameBuf;      /* one byte per pixel, value 0..3       */
+    BYTE        bColors[4];     /* frame buffer value -> palette index  */
 
-    HDC         hdcMainWin;     /* window DC the memory DC is derived from */
+    HDC         hdcMainWin;     /* window DC the memory DC is derived from  */
 
-    HDC         hdcMem;         /* memory DC holding the DIB section       */
+    HDC         hdcMem;         /* memory DC holding the DIB section        */
     HBITMAP     hBmpBuf;        /* DIB section, owned by hdcMem             */
     BYTE *      pBmpPixels;     /* raw pixels of the DIB section            */
     HBITMAP     hBmpOld;        /* bitmap that was selected before hBmpBuf  */
@@ -95,4 +95,23 @@ void RsGraphFlip(RSGRAPH* pRsGraph);
 /* Blit the DIB to the given device context at iX, iY. */
 void RsGraphPresent(RSGRAPH* pRsGraph, HDC hdc, int iX, int iY);
 
+/* Cell size of the built in 6x8 bitmap font, in pixels. */
+#define RS_FONT_WIDTH       6
+#define RS_FONT_HEIGHT      8
+
+/* Draw one character of the built in font at iX, iY, in logical coordinates.
+   The glyph box is RS_FONT_WIDTH by RS_FONT_HEIGHT, only the set pixels are
+   written so the background shows through. Every byte value has a glyph, so
+   there is no such thing as an unknown character. */
+void RsGraphDrawChar(RSGRAPH* pRsGraph, int iX, int iY,
+                     unsigned char bChar, BYTE bColor);
+
+/* Draw a NUL terminated narrow string, one glyph every RS_FONT_WIDTH pixels,
+   and return the x position just after the last glyph. This takes narrow
+   bytes on purpose: even on a UNICODE build the font maps bytes, so pass a
+   plain "text" literal, not a TEXT("text") one. */
+int RsGraphDrawText(RSGRAPH* pRsGraph, int iX, int iY,
+                    const unsigned char* pText, BYTE bColor);
+
 #endif
+

@@ -103,7 +103,7 @@ static int ParseOrientation(LPCTSTR lpCmdLine) {
 }
 #endif /* VER_PLATFORM_WIN32_CE */
 
-#ifdef VER_PLATFORM_WIN32_CE
+#if (IS_WIN_CE)
 /* Detect the device orientation on Windows CE. Fixed portrait devices cannot
    report which way they are mounted, so a portrait device is assumed to be
    rotated counter clockwise; change the fallback below if the picture ends up
@@ -136,7 +136,7 @@ static void FillTestRect(RSGRAPH* pRsGraph, int iX, int iY, int iW, int iH, BYTE
 
 /* Draw enough asymmetry to tell the three orientations apart: a white block
    in the logical top left corner ends up in a different physical corner for
-   each rotation, and the arrow always points towards the logical top. */
+   each rotation, and the text stays readable in the logical orientation. */
 static void DrawTestPattern(RSGRAPH* pRsGraph) {
     const int iWidth  = pRsGraph->iWidth;
     const int iHeight = pRsGraph->iHeight;
@@ -147,7 +147,7 @@ static void DrawTestPattern(RSGRAPH* pRsGraph) {
     /* Background */
     FillTestRect(pRsGraph, 0, 0, iWidth, iHeight, RS_GRAY_DARK);
 
-    /* Four grey levels across the top */
+    /* Four levels across the top: black, dark, pale and full green */
     for (i = 0; i < 4; ++i) {
         FillTestRect(pRsGraph, i * iBandW, 0, iBandW, iBandH, (BYTE)i);
     }
@@ -171,12 +171,24 @@ static void DrawTestPattern(RSGRAPH* pRsGraph) {
         RsGraphSetPixel(pRsGraph, i, i, RS_GRAY_LIGHT);
     }
 
-    /* Arrow pointing towards the logical top */
-    for (i = 0; i < 20; ++i) {
-        for (x = 0; x <= i; ++x) {
-            RsGraphSetPixel(pRsGraph, iWidth / 2 - i + x, iHeight / 2 - 40 + i, RS_GRAY_WHITE);
-            RsGraphSetPixel(pRsGraph, iWidth / 2 + i - x, iHeight / 2 - 40 + i, RS_GRAY_WHITE);
-        }
+    /* Text drawn with the built in 6x8 font. Narrow literals on purpose,
+       the font maps bytes even when the build is UNICODE. */
+    RsGraphDrawText(pRsGraph, 24, iBandH + 24,
+                    (const unsigned char *)"RadiativeShell", RS_GRAY_WHITE);
+    RsGraphDrawText(pRsGraph, 24, iBandH + 40,
+                    (const unsigned char *)"6x8 bitmap font 0123456789", RS_GRAY_LIGHT);
+
+    if (g_iOrientation == ORIENTATION_PORTRAIT_L) {
+        RsGraphDrawText(pRsGraph, 24, iBandH + 56,
+                        (const unsigned char *)"orientation: left", RS_GRAY_WHITE);
+    }
+    else if (g_iOrientation == ORIENTATION_PORTRAIT_R) {
+        RsGraphDrawText(pRsGraph, 24, iBandH + 56,
+                        (const unsigned char *)"orientation: right", RS_GRAY_WHITE);
+    }
+    else {
+        RsGraphDrawText(pRsGraph, 24, iBandH + 56,
+                        (const unsigned char *)"orientation: landscape", RS_GRAY_WHITE);
     }
 }
 
@@ -272,7 +284,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
 
     MyRegisterClass(hInstance, szWindowClass);
 
-#ifdef VER_PLATFORM_WIN32_CE
+#if (IS_WIN_CE)
     dwStyle     = WS_VISIBLE;
     iWinWidth   = CW_USEDEFAULT;
     iWinHeight  = CW_USEDEFAULT;
@@ -305,7 +317,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
 
     CenterWindow(hWnd);
 
-#ifdef VER_PLATFORM_WIN32_CE
+#if (IS_WIN_CE)
     /* The device decides the orientation, there is no command line there */
     g_iOrientation = DetectCeOrientation(hWnd);
 #endif
@@ -369,7 +381,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 
 
 BOOL SetTaskbarVisible(BOOL bVisible) {
-#ifdef VER_PLATFORM_WIN32_CE
+#if (IS_WIN_CE)
     HWND hWndTaskbar = FindWindow(TEXT("HHTaskBar"), NULL);
     if (!bVisible) {
         SetWindowPos(hWndTaskbar, NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_HIDEWINDOW);

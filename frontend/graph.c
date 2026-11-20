@@ -2,6 +2,7 @@
 #include <string.h>
 #include "rshell.h"
 #include "vga_palette.h"
+#include "hybird_6x8.h"
 
 /* Number of bytes one DIB row occupies. Rows are DWORD aligned. */
 static int RsGraphStride(int iWidth, int iBitCount) {
@@ -186,11 +187,14 @@ BOOL RsGraphInit(RSGRAPH* pRsGraph, HDC hdc, int iWidth, int iHeight,
     }
     memset(pRsGraph->pFrameBuf, 0, iFrameBufferSize);
 
-    /* Frame buffer value -> VGA palette index */
-    pRsGraph->bColors[RS_GRAY_BLACK] = 0x10;
-    pRsGraph->bColors[RS_GRAY_DARK]  = 0x14;
-    pRsGraph->bColors[RS_GRAY_LIGHT] = 0x1B;
-    pRsGraph->bColors[RS_GRAY_WHITE] = 0x1F;
+    /* Frame buffer value -> VGA palette index, inverted Matrix theme: a black
+       background with a green ramp, so RS_GRAY_BLACK is the darkest and
+       RS_GRAY_WHITE the brightest green. Only the 8 bit mode uses this map;
+       the 2 bit mode keeps its fixed grey palette. */
+    pRsGraph->bColors[RS_GRAY_BLACK] = 0x10;   /* 0x000000 black      */
+    pRsGraph->bColors[RS_GRAY_DARK]  = 0x78;   /* 0x007100 dark green */
+    pRsGraph->bColors[RS_GRAY_LIGHT] = 0x60;   /* 0xBAFFBA pale green */
+    pRsGraph->bColors[RS_GRAY_WHITE] = 0x30;   /* 0x00FF00 green      */
 
     return TRUE;
 }
@@ -393,11 +397,49 @@ void RsGraphFlip(RSGRAPH* pRsGraph) {
         return;
     }
 
-    /* The flip writes the DIB bits directly, so make sure any pending GDI
-       drawing on the memory DC has been flushed first. */
-    GdiFlush();
-
     pRsGraph->fnFlip(pRsGraph);
+}
+
+/* -------------------------------------------------------------------------
+   Text drawing with the built in 6x8 bitmap font.
+   ------------------------------------------------------------------------- */
+
+void RsGraphDrawChar(RSGRAPH* pRsGraph, int iX, int iY,
+                     unsigned char bChar, BYTE bColor) {
+    const unsigned char* pGlyph = FONT_HYBIRD_6x8 + (size_t)bChar * RS_FONT_HEIGHT;
+    int x, y;
+
+    if (!pRsGraph) {
+        return;
+    }
+
+    /* Bit 7 is the leftmost pixel, the glyphs only use the top six bits. */
+    for (y = 0; y < RS_FONT_HEIGHT; ++y) {
+        const unsigned char bRow = pGlyph[y];
+
+        for (x = 0; x < RS_FONT_WIDTH; ++x) {
+            if (bRow & (0x80 >> x)) {
+                RsGraphSetPixel(pRsGraph, iX + x, iY + y, bColor);
+            }
+        }
+    }
+}
+
+int RsGraphDrawText(RSGRAPH* pRsGraph, int iX, int iY,
+                    const unsigned char* pText, BYTE bColor) {
+    int x = iX;
+
+    if (!pRsGraph || !pText) {
+        return iX;
+    }
+
+    while (*pText) {
+        RsGraphDrawChar(pRsGraph, x, iY, *pText, bColor);
+        x += RS_FONT_WIDTH;
+        ++pText;
+    }
+
+    return x;
 }
 
 void RsGraphPresent(RSGRAPH* pRsGraph, HDC hdc, int iX, int iY) {
