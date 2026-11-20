@@ -27,6 +27,16 @@ static const unsigned char* const g_pbTabLabels[PB_TAB_COUNT] = {
     (const unsigned char *)"LAUNCHER"
 };
 
+/* Walk cycle frames, played in order on the stats page. */
+static const unsigned char* const g_pbWalkFrames[PB_WALK_FRAME_COUNT] = {
+    IMAGE_WALK_BOY_F0,
+    IMAGE_WALK_BOY_F1,
+    IMAGE_WALK_BOY_F2,
+    IMAGE_WALK_BOY_F3,
+    IMAGE_WALK_BOY_F4,
+    IMAGE_WALK_BOY_F5
+};
+
 /* Seven segment bit masks, bit 0 = a (top) through bit 6 = g (middle):
      --a--
     f     b
@@ -644,9 +654,11 @@ static void PbDrawBatteryReport(RSGRAPH* pRsGraph, const RS_POWER_INFO* pPower,
 }
 
 /* Stats page: the battery report hugs the right side of the frame, the artwork
-   is centred in the band that is left over. Both are vertically centred. */
+   is centred in the band that is left over. Both are vertically centred. The
+   artwork cycles through the walk frames, driven by dwAnimMs. */
 static void PbDrawStatsPage(RSGRAPH* pRsGraph, const RS_POWER_INFO* pPower,
-                            int iTop, int iBottom, int iLeft, int iRight) {
+                            DWORD dwAnimMs, int iTop, int iBottom,
+                            int iLeft, int iRight) {
     int iImgW = 0, iImgH = 0;
     int iBandRight = iRight;         /* right edge of the artwork band */
     int iImgX;
@@ -669,19 +681,26 @@ static void PbDrawStatsPage(RSGRAPH* pRsGraph, const RS_POWER_INFO* pPower,
         iBandRight = iReportRight - iReportW - PB_STATS_GAP;
     }
 
-    /* Artwork centred in the remaining band. */
-    if (!RsGraphImageSize(IMAGE_WALK_BOY, &iImgW, &iImgH)) {
-        return;
-    }
+    /* Pick the frame from the animation phase rather than from a counter, so a
+       dropped timer message never makes the cycle drift. */
+    {
+        const int            iFrame = (int)((dwAnimMs / PB_WALK_FRAME_MS)
+                                            % PB_WALK_FRAME_COUNT);
+        const unsigned char* pFrame = g_pbWalkFrames[iFrame];
 
-    iImgX = iLeft + (iBandRight - iLeft + 1 - iImgW) / 2;
-    if (iImgX < iLeft) {
-        iImgX = iLeft;               /* narrow screen: fall back to the left */
-    }
+        if (!RsGraphImageSize(pFrame, &iImgW, &iImgH)) {
+            return;
+        }
 
-    RsGraphDrawImage(pRsGraph, iImgX,
-                     iTop + (iBottom - iTop + 1 - iImgH) / 2,
-                     IMAGE_WALK_BOY, RS_GRAY_WHITE);
+        iImgX = iLeft + (iBandRight - iLeft + 1 - iImgW) / 2;
+        if (iImgX < iLeft) {
+            iImgX = iLeft;           /* narrow screen: fall back to the left */
+        }
+
+        RsGraphDrawImage(pRsGraph, iImgX,
+                         iTop + (iBottom - iTop + 1 - iImgH) / 2,
+                         pFrame, RS_GRAY_WHITE);
+    }
 }
 
 /* System page: a labelled list of the values GetSystemInfo reported, followed
@@ -855,6 +874,7 @@ static void PbDrawSystemPage(RSGRAPH* pRsGraph, const SYSTEM_INFO* pSysInfo,
 static void PbDrawContent(RSGRAPH* pRsGraph, int iActiveTab, const SYSTEMTIME* pTime,
                           const SYSTEM_INFO* pSysInfo, const RS_POWER_INFO* pPower,
                           const MEMORYSTATUS* pMem, DWORD dwUpSeconds,
+                          DWORD dwAnimMs,
                           int iScrW, int iScrH, int iColorMode,
                           int iTop, int iBottom, int iLeft, int iRight) {
     const int iW = iRight - iLeft + 1;
@@ -864,7 +884,7 @@ static void PbDrawContent(RSGRAPH* pRsGraph, int iActiveTab, const SYSTEMTIME* p
     PbDrawCorners(pRsGraph, iLeft, iTop, iW, iH, 5, RS_GRAY_WHITE);
 
     if (iActiveTab == PB_TAB_STATS) {
-        PbDrawStatsPage(pRsGraph, pPower, iTop, iBottom, iLeft, iRight);
+        PbDrawStatsPage(pRsGraph, pPower, dwAnimMs, iTop, iBottom, iLeft, iRight);
         return;
     }
 
@@ -920,7 +940,7 @@ static void PbDrawStatus(RSGRAPH* pRsGraph, int iY, int iLeft, int iRight) {
 void PbDrawScreen(RSGRAPH* pRsGraph, int iActiveTab,
                   const SYSTEMTIME* pTime, const SYSTEM_INFO* pSysInfo,
                   const RS_POWER_INFO* pPower, const MEMORYSTATUS* pMem,
-                  DWORD dwUpSeconds) {
+                  DWORD dwUpSeconds, DWORD dwAnimMs) {
     const int iW = pRsGraph->iWidth;
     const int iH = pRsGraph->iHeight;
     const int iFrameX  = PB_OUTER_MARGIN;
@@ -961,7 +981,7 @@ void PbDrawScreen(RSGRAPH* pRsGraph, int iActiveTab,
 
     if (iContentBottom > iContentTop) {
         PbDrawContent(pRsGraph, iActiveTab, pTime, pSysInfo, pPower,
-                      pMem, dwUpSeconds,
+                      pMem, dwUpSeconds, dwAnimMs,
                       pRsGraph->iWidth, pRsGraph->iHeight, pRsGraph->iColorMode,
                       iContentTop, iContentBottom, iInnerL + 4, iInnerR - 4);
     }

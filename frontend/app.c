@@ -45,6 +45,16 @@ static DWORD        g_dwBootTick = 0;
 static RS_POWER_INFO g_stPower;
 static BOOL          g_bPowerValid = FALSE;
 
+/* Timers. The clock ticks once a second while the clock tab is visible, the
+   walk cycle ticks four times a second while the stats tab is visible. Neither
+   runs on the other tabs, and both stop while the window is minimised. */
+#define RS_TIMER_CLOCK   1
+#define RS_TIMER_ANIM    2
+
+static DWORD        g_dwAnimBase   = 0;    /* tick when the walk cycle started */
+static BOOL         g_bAnimActive  = FALSE;
+static BOOL         g_bMinimised   = FALSE;
+
 #ifndef VER_PLATFORM_WIN32_CE
 /* -------------------------------------------------------------------------
    Desktop only: "-o landscape|left|right" picks the screen orientation so the
@@ -183,13 +193,70 @@ static void RedrawScreen(void) {
     RefreshClockIfNeeded();
     RefreshPowerIfNeeded();
 
+    /* The walk cycle restarts every time the stats tab is entered, so the
+       animation always begins at the first frame. */
+    if (g_iActiveTab == PB_TAB_STATS) {
+        if (!g_bAnimActive) {
+            g_dwAnimBase  = GetTickCount();
+            g_bAnimActive = TRUE;
+        }
+    }
+    else {
+        g_bAnimActive = FALSE;
+    }
+
     PbDrawScreen(&g_rsGraph, g_iActiveTab,
                  g_bClockValid ? &g_stClock : NULL,
                  g_bSysInfoValid ? &g_stSysInfo : NULL,
                  g_bPowerValid ? &g_stPower : NULL,
                  g_bMemValid ? &g_stMemStatus : NULL,
-                 (GetTickCount() - g_dwBootTick) / 1000);
+                 (GetTickCount() - g_dwBootTick) / 1000,
+                 g_bAnimActive ? (GetTickCount() - g_dwAnimBase) : 0);
     RsGraphFlip(&g_rsGraph);
+}
+
+/* Arm or disarm the timers for the current tab. Only one tab needs a timer at
+   a time, and nothing needs one while the window is minimised. */
+static void SyncTimers(HWND hWnd) {
+    const BOOL bWantClock = (!g_bMinimised && g_iActiveTab == PB_TAB_CLOCK);
+    const BOOL bWantAnim  = (!g_bMinimised && g_iActiveTab == PB_TAB_STATS);
+
+    if (bWantClock) {
+        UINT uiDelay = 1000;
+
+        /* Aim at the next whole second so the display never lags the system
+           clock, and fall back to a plain second while the snapshot is empty. */
+        if (g_bClockValid) {
+            uiDelay = 1000 - g_stClock.wMilliseconds;
+            if (uiDelay < 100) {
+                uiDelay = 100;
+            }
+        }
+        SetTimer(hWnd, RS_TIMER_CLOCK, uiDelay, NULL);
+    }
+    else {
+        KillTimer(hWnd, RS_TIMER_CLOCK);
+        if (!g_bMinimised) {
+            g_bClockValid = FALSE;
+        }
+    }
+
+    if (bWantAnim) {
+        SetTimer(hWnd, RS_TIMER_ANIM, PB_WALK_FRAME_MS, NULL);
+    }
+    else {
+        KillTimer(hWnd, RS_TIMER_ANIM);
+        g_bAnimActive = FALSE;
+    }
+}
+
+/* Change tab, then bring the timers and the picture in line. */
+static void SwitchTab(HWND hWnd, int iTab) {
+    g_iActiveTab = iTab;
+    g_bAnimActive = FALSE;      /* the next redraw restarts the walk cycle */
+    SyncTimers(hWnd);
+    RedrawScreen();
+    InvalidateRect(hWnd, NULL, FALSE);
 }
 
 /* Direction down while in a portrait orientation mirrors the picture. The
@@ -361,6 +428,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
        WM_CREATE. */
     if (InitGraph(hWnd)) {
         InvalidateRect(hWnd, NULL, FALSE);
+        SyncTimers(hWnd);
     }
 
     return TRUE;
@@ -386,12 +454,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
             switch (wParam) {
                 case VK_ESCAPE:
                 case VK_RETURN:
+                    KillTimer(hWnd, RS_TIMER_CLOCK);
+                    KillTimer(hWnd, RS_TIMER_ANIM);
                     DestroyWindow(hWnd);
                     break;
                 case VK_UP:
-                    g_iActiveTab = PbNextTab(g_iActiveTab);
-                    RedrawScreen();
-                    InvalidateRect(hWnd, NULL, FALSE);
+                    SwitchTab(hWnd, PbNextTab(g_iActiveTab));
                     break;
                 case VK_DOWN:
                     /* Auto repeat would flip the picture dozens of times per
@@ -406,12 +474,48 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                     const int iTab = PbTabFromKey((int)wParam);
 
                     if (iTab >= 0 && iTab != g_iActiveTab) {
-                        g_iActiveTab = iTab;
-                        RedrawScreen();
-                        InvalidateRect(hWnd, NULL, FALSE);
+                        SwitchTab(hWnd, iTab);
                     }
                     break;
                 }
+            }
+            break;
+        case WM_TIMER:
+            if (wParam == RS_TIMER_CLOCK) {
+                SYSTEMTIME stNow;
+
+                GetLocalTime(&stNow);
+
+                /* Only repaint when the second really changed; a timer may
+                   fire a few milliseconds early. Either way the timer is
+                   rearmed, so a skipped tick never accumulates. */
+                if (!g_bClockValid || stNow.wSecond != g_stClock.wSecond) {
+                    g_stClock     = stNow;
+                    g_bClockValid = TRUE;
+                    RedrawScreen();
+                    InvalidateRect(hWnd, NULL, FALSE);
+                }
+
+                SyncTimers(hWnd);
+            }
+            else if (wParam == RS_TIMER_ANIM) {
+                RedrawScreen();
+                InvalidateRect(hWnd, NULL, FALSE);
+            }
+            break;
+        case WM_SIZE:
+            /* Nothing needs to animate or tick while minimised. */
+            if (wParam == SIZE_MINIMIZED) {
+                if (!g_bMinimised) {
+                    g_bMinimised = TRUE;
+                    SyncTimers(hWnd);
+                }
+            }
+            else if (g_bMinimised) {
+                g_bMinimised = FALSE;
+                SyncTimers(hWnd);
+                RedrawScreen();
+                InvalidateRect(hWnd, NULL, FALSE);
             }
             break;
         case WM_CREATE:
@@ -430,6 +534,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
             EndPaint(hWnd, &ps);
             break;
         case WM_DESTROY:
+            KillTimer(hWnd, RS_TIMER_CLOCK);
+            KillTimer(hWnd, RS_TIMER_ANIM);
             RsGraphDispose(&g_rsGraph);
             g_bGraphReady = FALSE;
             SetTaskbarVisible(TRUE);

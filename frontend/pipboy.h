@@ -58,17 +58,24 @@
 /* System page extras: memory load bar and its inset. */
 #define PB_SYS_BAR_INSET_RIGHT  12
 
+/* Walk cycle on the stats page. Six frames, one every half second, so a full
+   loop takes three seconds. */
+#define PB_WALK_FRAME_COUNT     6
+#define PB_WALK_FRAME_MS        500
+
 /* Draw the complete shell: tabs, content area and status bar.
    pTime    - clock snapshot, only used by the clock tab, may be NULL.
    pSysInfo - GetSystemInfo result, only used by the system tab, may be NULL.
    pPower   - battery snapshot, only used by the stats tab, may be NULL.
    pMem     - GlobalMemoryStatus result, only used by the system tab.
    dwUpSeconds - uptime in seconds, only used by the system tab.
+   dwAnimMs - milliseconds since the stats tab was entered, drives the walk
+              cycle. Only used by the stats tab, ignored elsewhere.
    A NULL snapshot makes that tab fall back to the placeholder. */
 void PbDrawScreen(RSGRAPH* pRsGraph, int iActiveTab,
                   const SYSTEMTIME* pTime, const SYSTEM_INFO* pSysInfo,
                   const RS_POWER_INFO* pPower, const MEMORYSTATUS* pMem,
-                  DWORD dwUpSeconds);
+                  DWORD dwUpSeconds, DWORD dwAnimMs);
 
 /* Map a virtual key to a tab index. Accepts VK_1..VK_4 and the numeric keypad
    equivalents; returns -1 for every other key. */

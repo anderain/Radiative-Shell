@@ -5,7 +5,12 @@
    height second, followed by rows packed MSB first and stored top down. Use
    RsGraphImageSize / RsGraphDrawImage to decode them. */
 
-extern const unsigned char IMAGE_WALK_BOY[];
+extern const unsigned char IMAGE_WALK_BOY_F0[];
+extern const unsigned char IMAGE_WALK_BOY_F1[];
+extern const unsigned char IMAGE_WALK_BOY_F2[];
+extern const unsigned char IMAGE_WALK_BOY_F3[];
+extern const unsigned char IMAGE_WALK_BOY_F4[];
+extern const unsigned char IMAGE_WALK_BOY_F5[];
 extern const unsigned char IMAGE_RSHL_LOGO[];
 
 #endif
