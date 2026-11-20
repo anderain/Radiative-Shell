@@ -106,6 +106,19 @@ void RsGraphVLine(RSGRAPH* pRsGraph, int iX, int iY, int iH, BYTE bColor);
 /* One pixel thick rectangle outline. */
 void RsGraphFrame(RSGRAPH* pRsGraph, int iX, int iY, int iW, int iH, BYTE bColor);
 
+/* Read the width and height out of a packed 1 bpp image header. The header is
+   two bytes, width first, and every image in assets.h starts with it.
+   Returns FALSE when pImage is NULL. */
+BOOL RsGraphImageSize(const unsigned char* pImage, int* piWidth, int* piHeight);
+
+/* Draw a packed 1 bpp image with its top left corner at iX, iY. The data
+   starts with the two header bytes described above, followed by rows packed
+   MSB first and stored top down, so the row stride is (width + 7) / 8 bytes.
+   Only set bits are written, the background shows through everywhere else.
+   The image is clipped to the frame buffer. */
+void RsGraphDrawImage(RSGRAPH* pRsGraph, int iX, int iY,
+                      const unsigned char* pImage, BYTE bColor);
+
 /* Change the orientation at run time. Portrait left and right share the same
    physical DIB size, so this only rebinds fnFlip. Returns FALSE when the new
    orientation needs a different DIB size, which means landscape <-> portrait;

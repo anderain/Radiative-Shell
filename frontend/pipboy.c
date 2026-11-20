@@ -17,6 +17,7 @@
 */
 
 #include "pipboy.h"
+#include "assets.h"
 
 static const unsigned char* const g_pbTabLabels[PB_TAB_COUNT] = {
     (const unsigned char *)"STATS",
@@ -317,6 +318,23 @@ static void PbDrawClockPage(RSGRAPH* pRsGraph, const SYSTEMTIME* pTime,
     PbDrawTextCentered(pRsGraph, iLeft + 1, iY, iW - 2, szDate, RS_GRAY_LIGHT);
 }
 
+/* Stats page: the vault boy artwork, centred in the content frame. The image
+   is drawn at its native size, the canvas (not the visible pixels) is what
+   gets centred. */
+static void PbDrawStatsPage(RSGRAPH* pRsGraph, int iTop, int iBottom,
+                            int iLeft, int iRight) {
+    int iImgW, iImgH;
+
+    if (!RsGraphImageSize(IMAGE_WALK_BOY, &iImgW, &iImgH)) {
+        return;
+    }
+
+    RsGraphDrawImage(pRsGraph,
+                     iLeft + (iRight - iLeft + 1 - iImgW) / 2,
+                     iTop + (iBottom - iTop + 1 - iImgH) / 2,
+                     IMAGE_WALK_BOY, RS_GRAY_WHITE);
+}
+
 static void PbDrawContent(RSGRAPH* pRsGraph, int iActiveTab, const SYSTEMTIME* pTime,
                           int iTop, int iBottom, int iLeft, int iRight) {
     const int iW = iRight - iLeft + 1;
@@ -324,6 +342,11 @@ static void PbDrawContent(RSGRAPH* pRsGraph, int iActiveTab, const SYSTEMTIME* p
 
     RsGraphFrame(pRsGraph, iLeft, iTop, iW, iH, RS_GRAY_LIGHT);
     PbDrawCorners(pRsGraph, iLeft, iTop, iW, iH, 5, RS_GRAY_WHITE);
+
+    if (iActiveTab == PB_TAB_STATS) {
+        PbDrawStatsPage(pRsGraph, iTop, iBottom, iLeft, iRight);
+        return;
+    }
 
     if (iActiveTab == PB_TAB_CLOCK && pTime) {
         PbDrawClockPage(pRsGraph, pTime, iTop, iBottom, iLeft, iRight);

@@ -546,3 +546,52 @@ void RsGraphFrame(RSGRAPH* pRsGraph, int iX, int iY, int iW, int iH, BYTE bColor
     RsGraphVLine(pRsGraph, iX, iY, iH, bColor);
     RsGraphVLine(pRsGraph, iX + iW - 1, iY, iH, bColor);
 }
+
+/* -------------------------------------------------------------------------
+   Packed 1 bpp images. The header is two bytes, width then height, which is
+   what every image in assets.h starts with.
+   ------------------------------------------------------------------------- */
+
+BOOL RsGraphImageSize(const unsigned char* pImage, int* piWidth, int* piHeight) {
+    if (!pImage || !piWidth || !piHeight) {
+        return FALSE;
+    }
+
+    *piWidth  = (int)pImage[0];
+    *piHeight = (int)pImage[1];
+
+    return (*piWidth > 0 && *piHeight > 0);
+}
+
+void RsGraphDrawImage(RSGRAPH* pRsGraph, int iX, int iY,
+                      const unsigned char* pImage, BYTE bColor) {
+    int iWidth, iHeight, iStride;
+    int x, y;
+
+    if (!pRsGraph || !pRsGraph->pFrameBuf || !pImage) {
+        return;
+    }
+
+    if (!RsGraphImageSize(pImage, &iWidth, &iHeight)) {
+        return;
+    }
+
+    iStride = (iWidth + 7) / 8;
+    bColor  = (BYTE)(bColor & 3);
+
+    for (y = 0; y < iHeight; ++y) {
+        const unsigned char* pRow = pImage + 2 + (size_t)y * iStride;
+
+        for (x = 0; x < iWidth; ++x) {
+            if (pRow[x >> 3] & (0x80 >> (x & 7))) {
+                const int iDstX = iX + x;
+                const int iDstY = iY + y;
+
+                if (iDstX >= 0 && iDstX < pRsGraph->iWidth &&
+                    iDstY >= 0 && iDstY < pRsGraph->iHeight) {
+                    pRsGraph->pFrameBuf[(size_t)iDstY * pRsGraph->iWidth + iDstX] = bColor;
+                }
+            }
+        }
+    }
+}
