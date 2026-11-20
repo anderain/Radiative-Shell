@@ -271,9 +271,11 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
     MyRegisterClass(hInstance, szWindowClass);
 
 #if (IS_WIN_CE)
-    dwStyle     = WS_VISIBLE;
-    iWinWidth   = CW_USEDEFAULT;
-    iWinHeight  = CW_USEDEFAULT;
+    {
+        dwStyle     = WS_VISIBLE;
+        iWinWidth   = GetSystemMetrics(SM_CXSCREEN);
+        iWinHeight  = GetSystemMetrics(SM_CYSCREEN);
+    }
 #else
     {
         RECT rectWindow;
@@ -299,8 +301,8 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
     }
 
     ShowWindow(hWnd, nCmdShow);
+    SetTaskbarVisible(FALSE);
     UpdateWindow(hWnd);
-
     CenterWindow(hWnd);
 
 #if (IS_WIN_CE)
@@ -366,7 +368,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
             }
             break;
         case WM_CREATE:
-            SetTaskbarVisible(FALSE);
             break;
         case WM_PAINT:
             hdc = BeginPaint(hWnd, &ps);

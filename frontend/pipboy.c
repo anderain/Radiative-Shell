@@ -12,7 +12,7 @@
      | |              NO DATA               |  |
      | +------------------------------------+  |
      |----------------------------------------|  rule
-     | RADIATIVE OS v1.0        1-4  ESC EXIT |  status band
+     | RADIATIVE SHELL v1.0     1-4  ESC EXIT |  status band
      +----------------------------------------+
 */
 
@@ -342,15 +342,15 @@ static void PbDrawStatus(RSGRAPH* pRsGraph, int iY, int iLeft, int iRight) {
     const int iW = iRight - iLeft + 1;
 
     if (iW >= 300) {
-        pLeftText  = (const unsigned char *)"RADIATIVE OS v1.0";
+        pLeftText  = (const unsigned char *)"RADIATIVE SHELL v1.0";
         pRightText = (const unsigned char *)"1-4 TABS  ESC EXIT";
     }
     else if (iW >= 200) {
-        pLeftText  = (const unsigned char *)"RADIATIVE OS";
+        pLeftText  = (const unsigned char *)"RADIATIVE SHELL";
         pRightText = (const unsigned char *)"ESC EXIT";
     }
     else {
-        pLeftText  = (const unsigned char *)"RADIATIVE OS";
+        pLeftText  = (const unsigned char *)"RADIATIVE SHELL";
         pRightText = NULL;
     }
 
