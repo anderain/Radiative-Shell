@@ -42,14 +42,33 @@
 /* Gap between the artwork band and the battery report. */
 #define PB_STATS_GAP            12
 
+/* The charge bar stops this many pixels short of the report's right edge. */
+#define PB_STATS_BAR_INSET_RIGHT 12
+
+/* Headline scale, used for the page titles. */
+#define PB_TITLE_SCALE          2
+
+/* The 6x8 glyphs leave their bottom row blank, so the ink of a text block is
+   one pixel shorter than its advance; a headline is two rows shorter. The
+   block heights below use the ink height so the block ends up optically
+   centred rather than pinned high. */
+#define PB_TEXT_INK_H           (RS_FONT_HEIGHT - 1)
+#define PB_TITLE_INK_H          (RS_FONT_HEIGHT * PB_TITLE_SCALE - 2)
+
+/* System page extras: memory load bar and its inset. */
+#define PB_SYS_BAR_INSET_RIGHT  12
+
 /* Draw the complete shell: tabs, content area and status bar.
    pTime    - clock snapshot, only used by the clock tab, may be NULL.
    pSysInfo - GetSystemInfo result, only used by the system tab, may be NULL.
    pPower   - battery snapshot, only used by the stats tab, may be NULL.
+   pMem     - GlobalMemoryStatus result, only used by the system tab.
+   dwUpSeconds - uptime in seconds, only used by the system tab.
    A NULL snapshot makes that tab fall back to the placeholder. */
 void PbDrawScreen(RSGRAPH* pRsGraph, int iActiveTab,
                   const SYSTEMTIME* pTime, const SYSTEM_INFO* pSysInfo,
-                  const RS_POWER_INFO* pPower);
+                  const RS_POWER_INFO* pPower, const MEMORYSTATUS* pMem,
+                  DWORD dwUpSeconds);
 
 /* Map a virtual key to a tab index. Accepts VK_1..VK_4 and the numeric keypad
    equivalents; returns -1 for every other key. */

@@ -224,6 +224,15 @@ static int PbTextWidth(const unsigned char* pText) {
     return iLen * RS_FONT_WIDTH;
 }
 
+/* Same, for scaled text. */
+static int PbTextWidthScaled(const unsigned char* pText, int iScale) {
+    if (iScale < 1) {
+        iScale = 1;
+    }
+
+    return PbTextWidth(pText) * iScale;
+}
+
 /* Draw text centred horizontally inside [iX, iX + iW). Vertical centring of
    the 8 pixel glyph box inside a band of iH pixels is done by the caller. */
 static void PbDrawTextCentered(RSGRAPH* pRsGraph, int iX, int iY, int iW,
@@ -235,6 +244,19 @@ static void PbDrawTextCentered(RSGRAPH* pRsGraph, int iX, int iY, int iW,
     }
 
     RsGraphDrawText(pRsGraph, iX + (iW - iTextW) / 2, iY, pText, bColor);
+}
+
+/* Centred headline text, drawn at iScale times the font size. */
+static void PbDrawTextCenteredScaled(RSGRAPH* pRsGraph, int iX, int iY, int iW,
+                                     const unsigned char* pText, BYTE bColor,
+                                     int iScale) {
+    int iTextW = PbTextWidthScaled(pText, iScale);
+
+    if (iTextW > iW) {
+        iTextW = iW;
+    }
+
+    RsGraphDrawTextScaled(pRsGraph, iX + (iW - iTextW) / 2, iY, pText, bColor, iScale);
 }
 
 /* L shaped corner bracket. iDX and iDY are +1 or -1 and say which corner of
@@ -419,6 +441,7 @@ static void PbDrawClockPage(RSGRAPH* pRsGraph, const SYSTEMTIME* pTime,
     unsigned char szTime[9];
     unsigned char szDate[16];
     const int iW = iRight - iLeft + 1;
+    const int iTitleH = RS_FONT_HEIGHT * PB_TITLE_SCALE;
     int iDigitW, iGap, iColonW, iThick;
     int iDigitH, iBlockH, iY, iTotalW, iX;
     int i, iRules;
@@ -446,17 +469,18 @@ static void PbDrawClockPage(RSGRAPH* pRsGraph, const SYSTEMTIME* pTime,
     iTotalW = 6 * iDigitW + 2 * iColonW + 7 * iGap;
 
     /* Whole block: title, gap, digits, gap, rule, gap, date. */
-    iBlockH = RS_FONT_HEIGHT + 10 + iDigitH + 12 + 1 + 10 + RS_FONT_HEIGHT;
+    iBlockH = iTitleH + 10 + iDigitH + 12 + 1 + 10 + RS_FONT_HEIGHT;
 
     iY = iTop + (iBottom - iTop + 1 - iBlockH) / 2;
     if (iY < iTop + 1) {
         iY = iTop + 1;
     }
 
-    PbDrawTextCentered(pRsGraph, iLeft + 1, iY, iW - 2,
-                       (const unsigned char *)"LOCAL TIME", RS_GRAY_LIGHT);
+    PbDrawTextCenteredScaled(pRsGraph, iLeft + 1, iY, iW - 2,
+                             (const unsigned char *)"LOCAL TIME", RS_GRAY_LIGHT,
+                             PB_TITLE_SCALE);
 
-    iY += RS_FONT_HEIGHT + 10;
+    iY += iTitleH + 10;
     iX = iLeft + (iW - iTotalW) / 2;
 
     for (i = 0; i < 8; ++i) {
@@ -490,9 +514,10 @@ static void PbDrawClockPage(RSGRAPH* pRsGraph, const SYSTEMTIME* pTime,
    is drawn at its native size, the canvas (not the visible pixels) is what
    gets centred. */
 /* Frame plus a continuous fill, iPercent 0..100. An unknown percentage leaves
-   the bar empty so only the frame shows. */
-static void PbDrawBatteryBar(RSGRAPH* pRsGraph, int iX, int iY, int iW, int iH,
-                             int iPercent) {
+   the bar empty so only the frame shows. Used for the battery charge and for
+   the memory load. */
+static void PbDrawProgressBar(RSGRAPH* pRsGraph, int iX, int iY, int iW, int iH,
+                              int iPercent) {
     int iFill;
 
     RsGraphFrame(pRsGraph, iX, iY, iW, iH, RS_GRAY_LIGHT);
@@ -524,7 +549,8 @@ static void PbDrawBatteryReport(RSGRAPH* pRsGraph, const RS_POWER_INFO* pPower,
     const int iBarH = 10;
     const int iRowH = RS_FONT_HEIGHT;
     const int iRowGap = 4;
-    const int iBlockH = RS_FONT_HEIGHT + 6 + 1 + 8 + iRowH + 4 + iBarH + 8
+    const int iTitleH = RS_FONT_HEIGHT * PB_TITLE_SCALE;
+    const int iBlockH = iTitleH + 6 + 1 + 8 + iRowH + 4 + iBarH + 8
                       + iRowH + iRowGap + iRowH + iRowGap + iRowH + iRowGap + iRowH;
     int iY, iRuleW;
     int iPercent;
@@ -571,10 +597,11 @@ static void PbDrawBatteryReport(RSGRAPH* pRsGraph, const RS_POWER_INFO* pPower,
         iY = iTop + 1;
     }
 
-    PbDrawTextCentered(pRsGraph, iLeft, iY, iW,
-                       (const unsigned char *)"POWER", RS_GRAY_LIGHT);
+    PbDrawTextCenteredScaled(pRsGraph, iLeft, iY, iW,
+                             (const unsigned char *)"POWER", RS_GRAY_LIGHT,
+                             PB_TITLE_SCALE);
 
-    iY += RS_FONT_HEIGHT + 6;
+    iY += iTitleH + 6;
 
     iRuleW = (iW * 2 / 5) & ~1;
     if (iRuleW < 8) {
@@ -589,7 +616,9 @@ static void PbDrawBatteryReport(RSGRAPH* pRsGraph, const RS_POWER_INFO* pPower,
 
     iY += iRowH + 4;
 
-    PbDrawBatteryBar(pRsGraph, iValueX, iY, iRight - iValueX + 1, iBarH, iPercent);
+    PbDrawProgressBar(pRsGraph, iValueX, iY,
+                      iRight - iValueX + 1 - PB_STATS_BAR_INSET_RIGHT,
+                      iBarH, iPercent);
 
     iY += iBarH + 8;
 
@@ -655,10 +684,13 @@ static void PbDrawStatsPage(RSGRAPH* pRsGraph, const RS_POWER_INFO* pPower,
                      IMAGE_WALK_BOY, RS_GRAY_WHITE);
 }
 
-/* System page: a labelled list of the values GetSystemInfo reported. The
-   block is vertically centred, the label column has a fixed width so the
-   values line up. */
+/* System page: a labelled list of the values GetSystemInfo reported, followed
+   by a memory load bar, uptime and the display geometry. The block is
+   vertically centred, the label column has a fixed width so the values line
+   up. */
 static void PbDrawSystemPage(RSGRAPH* pRsGraph, const SYSTEM_INFO* pSysInfo,
+                             const MEMORYSTATUS* pMem, DWORD dwUpSeconds,
+                             int iScrW, int iScrH, int iColorMode,
                              int iTop, int iBottom, int iLeft, int iRight) {
     static const unsigned char* const kLabels[8] = {
         (const unsigned char *)"ARCH",
@@ -670,14 +702,27 @@ static void PbDrawSystemPage(RSGRAPH* pRsGraph, const SYSTEM_INFO* pSysInfo,
         (const unsigned char *)"PAGE",
         (const unsigned char *)"GRAN"
     };
+    static const unsigned char* const kExtraLabels[4] = {
+        (const unsigned char *)"RAM",
+        (const unsigned char *)"UP",
+        (const unsigned char *)"SCREEN",
+        (const unsigned char *)"MODE"
+    };
     unsigned char aValues[8][24];
+    unsigned char aExtras[4][24];
     const int iW = iRight - iLeft + 1;
     const int iRowH = RS_FONT_HEIGHT + 2;
-    const int iRowsH = 7 * iRowH + RS_FONT_HEIGHT;
-    const int iBlockH = RS_FONT_HEIGHT + 6 + 1 + 8 + iRowsH;
+    const int iTitleH = RS_FONT_HEIGHT * PB_TITLE_SCALE;
+    const int iBarH = 10;
+    const int iCoreH = 7 * iRowH + PB_TEXT_INK_H;
+    /* LOAD row, gap, bar, gap, then four extra rows. Measured on ink height so
+       the block ends exactly at the last row of pixels. */
+    const int iExtrasH = (RS_FONT_HEIGHT + 4) + iBarH + 8
+                       + 3 * iRowH + PB_TEXT_INK_H;
+    const int iBlockH = PB_TITLE_INK_H + 6 + 1 + 8 + iCoreH + 8 + iExtrasH;
     const int iLabelX = iLeft + 8;
     const int iValueX = iLabelX + 10 * RS_FONT_WIDTH;
-    int i, iY, iRuleW;
+    int i, iY, iRuleW, iBarY;
     unsigned char* p;
 
     /* Column 1: architecture name. */
@@ -718,15 +763,49 @@ static void PbDrawSystemPage(RSGRAPH* pRsGraph, const SYSTEM_INFO* pSysInfo,
     p = PbPutHex(aValues[7], pSysInfo->dwAllocationGranularity, 8);
     *p = 0;
 
+    /* Extras: memory, uptime, display geometry. */
+    {
+        const DWORD dwMb = 1024UL * 1024UL;
+
+        /* "1024M/1638M" */
+        p = PbPutDec(aExtras[0], pMem ? (pMem->dwAvailPhys / dwMb) : 0, 1);
+        *p++ = 'M';
+        *p++ = '/';
+        p = PbPutDec(p, pMem ? (pMem->dwTotalPhys / dwMb) : 0, 1);
+        *p++ = 'M';
+        *p = 0;
+
+        /* Uptime, reusing the battery duration formatter. */
+        RsPowerFormatDuration(aExtras[1], dwUpSeconds);
+
+        /* "320X240" */
+        p = PbPutDec(aExtras[2], (DWORD)iScrW, 1);
+        *p++ = 'X';
+        p = PbPutDec(p, (DWORD)iScrH, 1);
+        *p = 0;
+
+        /* "8BIT VGA" or "2BIT GREY" */
+        p = PbPutStr(aExtras[3],
+                     iColorMode == GRAPH_GRAYSCALE
+                         ? (const unsigned char *)"2BIT"
+                         : (const unsigned char *)"8BIT");
+        *p++ = ' ';
+        p = PbPutStr(p, iColorMode == GRAPH_GRAYSCALE
+                         ? (const unsigned char *)"GREY"
+                         : (const unsigned char *)"VGA");
+        *p = 0;
+    }
+
     iY = iTop + (iBottom - iTop + 1 - iBlockH) / 2;
     if (iY < iTop + 1) {
         iY = iTop + 1;
     }
 
-    PbDrawTextCentered(pRsGraph, iLeft + 1, iY, iW - 2,
-                       (const unsigned char *)"SYSTEM INFO", RS_GRAY_LIGHT);
+    PbDrawTextCenteredScaled(pRsGraph, iLeft + 1, iY, iW - 2,
+                             (const unsigned char *)"SYSTEM INFO", RS_GRAY_LIGHT,
+                             PB_TITLE_SCALE);
 
-    iY += RS_FONT_HEIGHT + 6;
+    iY += iTitleH + 6;
 
     iRuleW = (iW * 2 / 5) & ~1;
     if (iRuleW < 8) {
@@ -741,10 +820,42 @@ static void PbDrawSystemPage(RSGRAPH* pRsGraph, const SYSTEM_INFO* pSysInfo,
         RsGraphDrawText(pRsGraph, iValueX, iY, aValues[i], RS_GRAY_WHITE);
         iY += iRowH;
     }
+
+    /* Back off the trailing row gap so the extra block starts at the same
+       spacing as the rows above. */
+    iY -= iRowH - RS_FONT_HEIGHT - 8;
+
+    /* Memory load, with the same bar the battery report uses. */
+    {
+        unsigned char aLoad[8];
+        unsigned char* q = PbPutDec(aLoad, pMem ? pMem->dwMemoryLoad : 0, 1);
+
+        *q++ = '%';
+        *q = 0;
+
+        RsGraphDrawText(pRsGraph, iLabelX, iY,
+                        (const unsigned char *)"LOAD", RS_GRAY_LIGHT);
+        RsGraphDrawText(pRsGraph, iValueX, iY, aLoad, RS_GRAY_WHITE);
+
+        iBarY = iY + RS_FONT_HEIGHT + 4;
+        PbDrawProgressBar(pRsGraph, iValueX, iBarY,
+                          iRight - 8 - iValueX + 1 - PB_SYS_BAR_INSET_RIGHT,
+                          iBarH, pMem ? (int)pMem->dwMemoryLoad : 0);
+
+        iY = iBarY + iBarH + 4;
+    }
+
+    for (i = 0; i < 4; ++i) {
+        RsGraphDrawText(pRsGraph, iLabelX, iY, kExtraLabels[i], RS_GRAY_LIGHT);
+        RsGraphDrawText(pRsGraph, iValueX, iY, aExtras[i], RS_GRAY_WHITE);
+        iY += iRowH;
+    }
 }
 
 static void PbDrawContent(RSGRAPH* pRsGraph, int iActiveTab, const SYSTEMTIME* pTime,
                           const SYSTEM_INFO* pSysInfo, const RS_POWER_INFO* pPower,
+                          const MEMORYSTATUS* pMem, DWORD dwUpSeconds,
+                          int iScrW, int iScrH, int iColorMode,
                           int iTop, int iBottom, int iLeft, int iRight) {
     const int iW = iRight - iLeft + 1;
     const int iH = iBottom - iTop + 1;
@@ -758,7 +869,9 @@ static void PbDrawContent(RSGRAPH* pRsGraph, int iActiveTab, const SYSTEMTIME* p
     }
 
     if (iActiveTab == PB_TAB_SYSTEM && pSysInfo) {
-        PbDrawSystemPage(pRsGraph, pSysInfo, iTop, iBottom, iLeft, iRight);
+        PbDrawSystemPage(pRsGraph, pSysInfo, pMem, dwUpSeconds,
+                         iScrW, iScrH, iColorMode,
+                         iTop, iBottom, iLeft, iRight);
         return;
     }
 
@@ -806,7 +919,8 @@ static void PbDrawStatus(RSGRAPH* pRsGraph, int iY, int iLeft, int iRight) {
 
 void PbDrawScreen(RSGRAPH* pRsGraph, int iActiveTab,
                   const SYSTEMTIME* pTime, const SYSTEM_INFO* pSysInfo,
-                  const RS_POWER_INFO* pPower) {
+                  const RS_POWER_INFO* pPower, const MEMORYSTATUS* pMem,
+                  DWORD dwUpSeconds) {
     const int iW = pRsGraph->iWidth;
     const int iH = pRsGraph->iHeight;
     const int iFrameX  = PB_OUTER_MARGIN;
@@ -847,6 +961,8 @@ void PbDrawScreen(RSGRAPH* pRsGraph, int iActiveTab,
 
     if (iContentBottom > iContentTop) {
         PbDrawContent(pRsGraph, iActiveTab, pTime, pSysInfo, pPower,
+                      pMem, dwUpSeconds,
+                      pRsGraph->iWidth, pRsGraph->iHeight, pRsGraph->iColorMode,
                       iContentTop, iContentBottom, iInnerL + 4, iInnerR - 4);
     }
 

@@ -146,5 +146,17 @@ void RsGraphDrawChar(RSGRAPH* pRsGraph, int iX, int iY,
 int RsGraphDrawText(RSGRAPH* pRsGraph, int iX, int iY,
                     const unsigned char* pText, BYTE bColor);
 
+/* Same as RsGraphDrawChar but every glyph pixel is expanded into an iScale by
+   iScale block, which gives 2x and 3x headline text from the same 6x8 font.
+   An iScale below 1 is treated as 1. */
+void RsGraphDrawCharScaled(RSGRAPH* pRsGraph, int iX, int iY,
+                           unsigned char bChar, BYTE bColor, int iScale);
+
+/* Scaled text: one glyph cell every RS_FONT_WIDTH * iScale pixels, advancing
+   the same way as RsGraphDrawText. Returns the x position after the last
+   glyph. */
+int RsGraphDrawTextScaled(RSGRAPH* pRsGraph, int iX, int iY,
+                          const unsigned char* pText, BYTE bColor, int iScale);
+
 #endif
 

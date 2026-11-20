@@ -35,6 +35,12 @@ static BOOL         g_bClockValid  = FALSE;
 static SYSTEM_INFO  g_stSysInfo;
 static BOOL         g_bSysInfoValid = FALSE;
 
+/* Memory status and the boot time, read on the same occasion as the system
+   information. The uptime is derived from the tick count at draw time. */
+static MEMORYSTATUS g_stMemStatus;
+static BOOL         g_bMemValid = FALSE;
+static DWORD        g_dwBootTick = 0;
+
 /* Battery snapshot, refreshed every time the stats tab is entered. */
 static RS_POWER_INFO g_stPower;
 static BOOL          g_bPowerValid = FALSE;
@@ -180,7 +186,9 @@ static void RedrawScreen(void) {
     PbDrawScreen(&g_rsGraph, g_iActiveTab,
                  g_bClockValid ? &g_stClock : NULL,
                  g_bSysInfoValid ? &g_stSysInfo : NULL,
-                 g_bPowerValid ? &g_stPower : NULL);
+                 g_bPowerValid ? &g_stPower : NULL,
+                 g_bMemValid ? &g_stMemStatus : NULL,
+                 (GetTickCount() - g_dwBootTick) / 1000);
     RsGraphFlip(&g_rsGraph);
 }
 
@@ -237,6 +245,15 @@ static BOOL InitGraph(HWND hWnd) {
     /* System information is static for the lifetime of the process. */
     GetSystemInfo(&g_stSysInfo);
     g_bSysInfoValid = TRUE;
+
+    memset(&g_stMemStatus, 0, sizeof(g_stMemStatus));
+    g_stMemStatus.dwLength = sizeof(g_stMemStatus);
+    GlobalMemoryStatus(&g_stMemStatus);
+    g_bMemValid = TRUE;
+
+    /* Tick count wraps after about 49 days, which is fine for an uptime
+       display: the wrap only makes the figure jump back to zero. */
+    g_dwBootTick = GetTickCount();
 
     g_bGraphReady = TRUE;
     RedrawScreen();

@@ -486,6 +486,54 @@ int RsGraphDrawText(RSGRAPH* pRsGraph, int iX, int iY,
     return x;
 }
 
+void RsGraphDrawCharScaled(RSGRAPH* pRsGraph, int iX, int iY,
+                           unsigned char bChar, BYTE bColor, int iScale) {
+    const unsigned char* pGlyph = FONT_HYBIRD_6x8 + (size_t)bChar * RS_FONT_HEIGHT;
+    int x, y;
+
+    if (!pRsGraph) {
+        return;
+    }
+
+    if (iScale < 1) {
+        iScale = 1;
+    }
+
+    /* Bit 7 is the leftmost pixel, the glyphs only use the top six bits. Each
+       set bit becomes one solid block, clipping is handled by FillRect. */
+    for (y = 0; y < RS_FONT_HEIGHT; ++y) {
+        const unsigned char bRow = pGlyph[y];
+
+        for (x = 0; x < RS_FONT_WIDTH; ++x) {
+            if (bRow & (0x80 >> x)) {
+                RsGraphFillRect(pRsGraph, iX + x * iScale, iY + y * iScale,
+                                iScale, iScale, bColor);
+            }
+        }
+    }
+}
+
+int RsGraphDrawTextScaled(RSGRAPH* pRsGraph, int iX, int iY,
+                          const unsigned char* pText, BYTE bColor, int iScale) {
+    int x = iX;
+
+    if (!pRsGraph || !pText) {
+        return iX;
+    }
+
+    if (iScale < 1) {
+        iScale = 1;
+    }
+
+    while (*pText) {
+        RsGraphDrawCharScaled(pRsGraph, x, iY, *pText, bColor, iScale);
+        x += RS_FONT_WIDTH * iScale;
+        ++pText;
+    }
+
+    return x;
+}
+
 void RsGraphPresent(RSGRAPH* pRsGraph, HDC hdc, int iX, int iY) {
     if (!pRsGraph || !pRsGraph->hdcMem || !hdc) {
         return;
