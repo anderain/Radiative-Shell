@@ -17,6 +17,7 @@
 */
 
 #include "pipboy.h"
+#include "battery.h"
 #include "assets.h"
 
 static const unsigned char* const g_pbTabLabels[PB_TAB_COUNT] = {
@@ -488,18 +489,152 @@ static void PbDrawClockPage(RSGRAPH* pRsGraph, const SYSTEMTIME* pTime,
 /* Stats page: the vault boy artwork, centred in the content frame. The image
    is drawn at its native size, the canvas (not the visible pixels) is what
    gets centred. */
-static void PbDrawStatsPage(RSGRAPH* pRsGraph, int iTop, int iBottom,
-                            int iLeft, int iRight) {
-    int iImgW, iImgH;
+/* Frame plus a continuous fill, iPercent 0..100. An unknown percentage leaves
+   the bar empty so only the frame shows. */
+static void PbDrawBatteryBar(RSGRAPH* pRsGraph, int iX, int iY, int iW, int iH,
+                             int iPercent) {
+    int iFill;
 
-    if (!RsGraphImageSize(IMAGE_WALK_BOY, &iImgW, &iImgH)) {
+    RsGraphFrame(pRsGraph, iX, iY, iW, iH, RS_GRAY_LIGHT);
+
+    if (iPercent <= 0 || iPercent > 100) {
         return;
     }
 
-    RsGraphDrawImage(pRsGraph,
-                     iLeft + (iRight - iLeft + 1 - iImgW) / 2,
-                     iTop + (iBottom - iTop + 1 - iImgH) / 2,
-                     IMAGE_WALK_BOY, RS_GRAY_WHITE);
+    iFill = (iW - 2) * iPercent / 100;
+    if (iFill < 1) {
+        iFill = 1;                    /* never hide a non zero charge */
+    }
+
+    RsGraphFillRect(pRsGraph, iX + 1, iY + 1, iFill, iH - 2, RS_GRAY_WHITE);
+}
+
+/* Right hand column of the stats page: a battery report with a charge bar.
+   The label column has a fixed width so every value starts at the same x. */
+static void PbDrawBatteryReport(RSGRAPH* pRsGraph, const RS_POWER_INFO* pPower,
+                                int iLeft, int iRight, int iTop, int iBottom) {
+    unsigned char aPercent[8];
+    unsigned char aLife[16];
+    unsigned char aFull[16];
+    const int iW = iRight - iLeft + 1;
+    const int iLabelW = 14 * RS_FONT_WIDTH;
+    const int iValueX = iLeft + iLabelW;
+    const int iBarH = 10;
+    const int iRowH = RS_FONT_HEIGHT;
+    const int iRowGap = 4;
+    const int iBlockH = RS_FONT_HEIGHT + 6 + 1 + 8 + iRowH + 4 + iBarH + 8
+                      + iRowH + iRowGap + iRowH + iRowGap + iRowH + iRowGap + iRowH;
+    int iY, iRuleW;
+    int iPercent;
+
+    /* Percentage text, "N/A" when the platform does not know. */
+    if (pPower->bBatteryLifePercent == RS_POWER_PERCENT_UNKNOWN) {
+        aPercent[0] = 'N';
+        aPercent[1] = '/';
+        aPercent[2] = 'A';
+        aPercent[3] = 0;
+        iPercent = -1;
+    }
+    else {
+        iPercent = (int)pPower->bBatteryLifePercent;
+        if (iPercent > 100) {
+            iPercent = 100;
+        }
+
+        {
+            unsigned char* p = aPercent;
+
+            if (iPercent >= 100) {
+                *p++ = '1';
+                *p++ = '0';
+                *p++ = '0';
+            }
+            else if (iPercent >= 10) {
+                *p++ = (unsigned char)('0' + iPercent / 10);
+                *p++ = (unsigned char)('0' + iPercent % 10);
+            }
+            else {
+                *p++ = (unsigned char)('0' + iPercent);
+            }
+            *p++ = '%';
+            *p = 0;
+        }
+    }
+
+    RsPowerFormatDuration(aLife, pPower->dwBatteryLifeTime);
+    RsPowerFormatDuration(aFull, pPower->dwBatteryFullLifeTime);
+
+    iY = iTop + (iBottom - iTop + 1 - iBlockH) / 2;
+    if (iY < iTop + 1) {
+        iY = iTop + 1;
+    }
+
+    PbDrawTextCentered(pRsGraph, iLeft, iY, iW,
+                       (const unsigned char *)"POWER", RS_GRAY_LIGHT);
+
+    iY += RS_FONT_HEIGHT + 6;
+
+    iRuleW = (iW * 2 / 5) & ~1;
+    if (iRuleW < 8) {
+        iRuleW = 8;
+    }
+    RsGraphHLine(pRsGraph, iLeft + (iW - iRuleW) / 2, iY, iRuleW, RS_GRAY_LIGHT);
+
+    iY += 1 + 8;
+
+    RsGraphDrawText(pRsGraph, iLeft, iY, (const unsigned char *)"BATTERY", RS_GRAY_LIGHT);
+    RsGraphDrawText(pRsGraph, iValueX, iY, aPercent, RS_GRAY_WHITE);
+
+    iY += iRowH + 4;
+
+    PbDrawBatteryBar(pRsGraph, iValueX, iY, iRight - iValueX + 1, iBarH, iPercent);
+
+    iY += iBarH + 8;
+
+    RsGraphDrawText(pRsGraph, iLeft, iY, (const unsigned char *)"STATUS", RS_GRAY_LIGHT);
+    RsGraphDrawText(pRsGraph, iValueX, iY,
+                    RsPowerStatusText(pPower->bBatteryFlag), RS_GRAY_WHITE);
+
+    iY += iRowH + iRowGap;
+
+    RsGraphDrawText(pRsGraph, iLeft, iY, (const unsigned char *)"AC", RS_GRAY_LIGHT);
+    RsGraphDrawText(pRsGraph, iValueX, iY,
+                    RsPowerACText(pPower->bACLineStatus), RS_GRAY_WHITE);
+
+    iY += iRowH + iRowGap;
+
+    RsGraphDrawText(pRsGraph, iLeft, iY, (const unsigned char *)"LIFE", RS_GRAY_LIGHT);
+    RsGraphDrawText(pRsGraph, iValueX, iY, aLife, RS_GRAY_WHITE);
+
+    iY += iRowH + iRowGap;
+
+    RsGraphDrawText(pRsGraph, iLeft, iY, (const unsigned char *)"FULL", RS_GRAY_LIGHT);
+    RsGraphDrawText(pRsGraph, iValueX, iY, aFull, RS_GRAY_WHITE);
+}
+
+/* Stats page: artwork on the left, battery report on the right. The artwork is
+   vertically centred and keeps its native size; the report is centred as one
+   block in the same band. */
+static void PbDrawStatsPage(RSGRAPH* pRsGraph, const RS_POWER_INFO* pPower,
+                            int iTop, int iBottom, int iLeft, int iRight) {
+    int iImgW, iImgH;
+    const int iImgX = iLeft + 8;
+    int iReportLeft;
+
+    if (RsGraphImageSize(IMAGE_WALK_BOY, &iImgW, &iImgH)) {
+        RsGraphDrawImage(pRsGraph, iImgX,
+                         iTop + (iBottom - iTop + 1 - iImgH) / 2,
+                         IMAGE_WALK_BOY, RS_GRAY_WHITE);
+        iReportLeft = iImgX + iImgW + 12;
+    }
+    else {
+        iReportLeft = iLeft + 8;
+    }
+
+    if (pPower && iReportLeft < iRight) {
+        PbDrawBatteryReport(pRsGraph, pPower, iReportLeft, iRight - 8,
+                            iTop, iBottom);
+    }
 }
 
 /* System page: a labelled list of the values GetSystemInfo reported. The
@@ -591,7 +726,7 @@ static void PbDrawSystemPage(RSGRAPH* pRsGraph, const SYSTEM_INFO* pSysInfo,
 }
 
 static void PbDrawContent(RSGRAPH* pRsGraph, int iActiveTab, const SYSTEMTIME* pTime,
-                          const SYSTEM_INFO* pSysInfo,
+                          const SYSTEM_INFO* pSysInfo, const RS_POWER_INFO* pPower,
                           int iTop, int iBottom, int iLeft, int iRight) {
     const int iW = iRight - iLeft + 1;
     const int iH = iBottom - iTop + 1;
@@ -600,7 +735,7 @@ static void PbDrawContent(RSGRAPH* pRsGraph, int iActiveTab, const SYSTEMTIME* p
     PbDrawCorners(pRsGraph, iLeft, iTop, iW, iH, 5, RS_GRAY_WHITE);
 
     if (iActiveTab == PB_TAB_STATS) {
-        PbDrawStatsPage(pRsGraph, iTop, iBottom, iLeft, iRight);
+        PbDrawStatsPage(pRsGraph, pPower, iTop, iBottom, iLeft, iRight);
         return;
     }
 
@@ -652,7 +787,8 @@ static void PbDrawStatus(RSGRAPH* pRsGraph, int iY, int iLeft, int iRight) {
 }
 
 void PbDrawScreen(RSGRAPH* pRsGraph, int iActiveTab,
-                  const SYSTEMTIME* pTime, const SYSTEM_INFO* pSysInfo) {
+                  const SYSTEMTIME* pTime, const SYSTEM_INFO* pSysInfo,
+                  const RS_POWER_INFO* pPower) {
     const int iW = pRsGraph->iWidth;
     const int iH = pRsGraph->iHeight;
     const int iFrameX  = PB_OUTER_MARGIN;
@@ -692,7 +828,7 @@ void PbDrawScreen(RSGRAPH* pRsGraph, int iActiveTab,
     PbDrawTabBar(pRsGraph, iActiveTab, PB_TAB_LEFT, iTabLimit);
 
     if (iContentBottom > iContentTop) {
-        PbDrawContent(pRsGraph, iActiveTab, pTime, pSysInfo,
+        PbDrawContent(pRsGraph, iActiveTab, pTime, pSysInfo, pPower,
                       iContentTop, iContentBottom, iInnerL + 4, iInnerR - 4);
     }
 

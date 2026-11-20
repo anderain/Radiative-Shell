@@ -2,6 +2,7 @@
 #define _PIPBOY_H_
 
 #include "rshell.h"
+#include "battery.h"
 
 /* Tabs shown in the top bar, in display order. */
 #define PB_TAB_STATS        0
@@ -33,9 +34,11 @@
 /* Draw the complete shell: tabs, content area and status bar.
    pTime    - clock snapshot, only used by the clock tab, may be NULL.
    pSysInfo - GetSystemInfo result, only used by the system tab, may be NULL.
+   pPower   - battery snapshot, only used by the stats tab, may be NULL.
    A NULL snapshot makes that tab fall back to the placeholder. */
 void PbDrawScreen(RSGRAPH* pRsGraph, int iActiveTab,
-                  const SYSTEMTIME* pTime, const SYSTEM_INFO* pSysInfo);
+                  const SYSTEMTIME* pTime, const SYSTEM_INFO* pSysInfo,
+                  const RS_POWER_INFO* pPower);
 
 /* Map a virtual key to a tab index. Accepts VK_1..VK_4 and the numeric keypad
    equivalents; returns -1 for every other key. */

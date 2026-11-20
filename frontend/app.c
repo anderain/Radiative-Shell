@@ -35,6 +35,10 @@ static BOOL         g_bClockValid  = FALSE;
 static SYSTEM_INFO  g_stSysInfo;
 static BOOL         g_bSysInfoValid = FALSE;
 
+/* Battery snapshot, refreshed every time the stats tab is entered. */
+static RS_POWER_INFO g_stPower;
+static BOOL          g_bPowerValid = FALSE;
+
 #ifndef VER_PLATFORM_WIN32_CE
 /* -------------------------------------------------------------------------
    Desktop only: "-o landscape|left|right" picks the screen orientation so the
@@ -149,6 +153,20 @@ static void RefreshClockIfNeeded(void) {
     }
 }
 
+/* Battery level changes over time, so it is re-read whenever the stats tab is
+   entered and dropped when the tab is left. */
+static void RefreshPowerIfNeeded(void) {
+    if (g_iActiveTab != PB_TAB_STATS) {
+        g_bPowerValid = FALSE;
+        return;
+    }
+
+    if (!g_bPowerValid) {
+        RsQueryPower(&g_stPower);
+        g_bPowerValid = TRUE;
+    }
+}
+
 /* Draw the whole shell into the frame buffer and push the result into the
    DIB. Safe to call when the graph is not ready yet. */
 static void RedrawScreen(void) {
@@ -157,10 +175,12 @@ static void RedrawScreen(void) {
     }
 
     RefreshClockIfNeeded();
+    RefreshPowerIfNeeded();
 
     PbDrawScreen(&g_rsGraph, g_iActiveTab,
                  g_bClockValid ? &g_stClock : NULL,
-                 g_bSysInfoValid ? &g_stSysInfo : NULL);
+                 g_bSysInfoValid ? &g_stSysInfo : NULL,
+                 g_bPowerValid ? &g_stPower : NULL);
     RsGraphFlip(&g_rsGraph);
 }
 

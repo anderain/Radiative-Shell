@@ -929,7 +929,23 @@ DEP_CPP_PIPBO=\
 # End Source File
 # Begin Source File
 
+SOURCE=..\frontend\battery.c
+# End Source File
+# Begin Source File
+
+SOURCE=..\frontend\assets.c
+# End Source File
+# Begin Source File
+
 SOURCE=..\frontend\pipboy.h
+# End Source File
+# Begin Source File
+
+SOURCE=..\frontend\battery.h
+# End Source File
+# Begin Source File
+
+SOURCE=..\frontend\assets.h
 # End Source File
 # Begin Source File
 
