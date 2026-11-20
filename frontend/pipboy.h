@@ -23,6 +23,13 @@
 /* Height of the status bar band above the bottom frame line. */
 #define PB_STATUS_HEIGHT    12
 
+/* Branding logo shown at the right end of the tab strip. It is 15 pixels tall,
+   which is exactly the gap between the frame top and the rule under the tabs,
+   so it is aligned to the frame top rather than to the tab band. */
+#define PB_LOGO_TOP         (PB_TAB_TOP - 1)
+#define PB_LOGO_INSET_RIGHT 2
+#define PB_LOGO_MIN_GAP     6
+
 /* Draw the complete shell: tabs, content area and status bar. pTime is only
    used by the clock tab; pass NULL to show the placeholder instead. */
 void PbDrawScreen(RSGRAPH* pRsGraph, int iActiveTab, const SYSTEMTIME* pTime);

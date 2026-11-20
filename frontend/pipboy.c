@@ -116,9 +116,10 @@ const unsigned char* PbTabLabel(int iTab) {
 }
 
 /* Tab bar. Slots have a fixed width derived from the label length so that
-   switching tabs never moves the other labels around. */
-static void PbDrawTabBar(RSGRAPH* pRsGraph, int iActiveTab, int iRight) {
-    int i, x = PB_TAB_LEFT;
+   switching tabs never moves the other labels around. iRight is the exclusive
+   limit the slots may reach, which leaves room for the logo. */
+static void PbDrawTabBar(RSGRAPH* pRsGraph, int iActiveTab, int iLeft, int iRight) {
+    int i, x = iLeft;
 
     for (i = 0; i < PB_TAB_COUNT; ++i) {
         const unsigned char* pLabel = g_pbTabLabels[i];
@@ -140,6 +141,26 @@ static void PbDrawTabBar(RSGRAPH* pRsGraph, int iActiveTab, int iRight) {
 
         x += iSlotW + 2;
     }
+}
+
+/* Branding logo, right aligned in the tab strip. Returns the exclusive x limit
+   the tab slots may reach, so the logo is never overdrawn. */
+static int PbDrawLogo(RSGRAPH* pRsGraph, int iRight) {
+    int iImgW, iImgH, iX;
+
+    if (!RsGraphImageSize(IMAGE_RSHL_LOGO, &iImgW, &iImgH)) {
+        return iRight + 1;
+    }
+
+    iX = iRight - PB_LOGO_INSET_RIGHT - iImgW + 1;
+    if (iX <= PB_LOGO_INSET_RIGHT) {
+        /* Not enough room, drop the logo rather than crushing the tabs. */
+        return iRight + 1;
+    }
+
+    RsGraphDrawImage(pRsGraph, iX, PB_LOGO_TOP, IMAGE_RSHL_LOGO, RS_GRAY_LIGHT);
+
+    return iX - PB_LOGO_MIN_GAP;
 }
 
 /* Geometry of one segment inside a digit box. iSeg is 0..6 for a..g. */
@@ -404,6 +425,7 @@ void PbDrawScreen(RSGRAPH* pRsGraph, int iActiveTab, const SYSTEMTIME* pTime) {
                            + (PB_STATUS_HEIGHT - RS_FONT_HEIGHT) / 2;
     const int iContentTop = PB_RULE_TAB + 2;
     const int iContentBottom = iStatusRuleY - 2;
+    int       iTabLimit;
 
     if (iActiveTab < 0 || iActiveTab >= PB_TAB_COUNT) {
         iActiveTab = PB_TAB_STATS;
@@ -423,7 +445,10 @@ void PbDrawScreen(RSGRAPH* pRsGraph, int iActiveTab, const SYSTEMTIME* pTime) {
     RsGraphHLine(pRsGraph, iFrameX + 1, PB_RULE_TAB, iFrameW - 2, RS_GRAY_LIGHT);
     RsGraphHLine(pRsGraph, iFrameX + 1, iStatusRuleY, iFrameW - 2, RS_GRAY_LIGHT);
 
-    PbDrawTabBar(pRsGraph, iActiveTab, iInnerR);
+    /* Logo first: it reports how far right the tab slots may go. */
+    iTabLimit = PbDrawLogo(pRsGraph, iInnerR);
+
+    PbDrawTabBar(pRsGraph, iActiveTab, PB_TAB_LEFT, iTabLimit);
 
     if (iContentBottom > iContentTop) {
         PbDrawContent(pRsGraph, iActiveTab, pTime,

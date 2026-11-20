@@ -6,5 +6,6 @@
    RsGraphImageSize / RsGraphDrawImage to decode them. */
 
 extern const unsigned char IMAGE_WALK_BOY[];
+extern const unsigned char IMAGE_RSHL_LOGO[];
 
 #endif
