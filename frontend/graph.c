@@ -115,6 +115,24 @@ static void RsFlip2PortraitR(RSGRAPH* pRsGraph) {
    Device and graph life cycle.
    ------------------------------------------------------------------------- */
 
+/* Pick the flip function matching the current colour mode and orientation. */
+static void RsGraphBindFlip(RSGRAPH* pRsGraph) {
+    if (pRsGraph->iColorMode == GRAPH_GRAYSCALE) {
+        switch (pRsGraph->iOrientation) {
+            case ORIENTATION_PORTRAIT_L: pRsGraph->fnFlip = RsFlip2PortraitL; break;
+            case ORIENTATION_PORTRAIT_R: pRsGraph->fnFlip = RsFlip2PortraitR; break;
+            default:                     pRsGraph->fnFlip = RsFlip2Landscape; break;
+        }
+    }
+    else {
+        switch (pRsGraph->iOrientation) {
+            case ORIENTATION_PORTRAIT_L: pRsGraph->fnFlip = RsFlip8PortraitL; break;
+            case ORIENTATION_PORTRAIT_R: pRsGraph->fnFlip = RsFlip8PortraitR; break;
+            default:                     pRsGraph->fnFlip = RsFlip8Landscape; break;
+        }
+    }
+}
+
 void GetDeviceInfo(HDC hdc, RSDEVICEINFO* pDeviceInfo) {
     HBITMAP         hBitmap;
     OSVERSIONINFO   osInfo;
@@ -320,20 +338,46 @@ BOOL RsGraphCreateDC(RSGRAPH* pRsGraph) {
     free(pbmi);
 
     /* Select flip function */
-    if (pRsGraph->iColorMode == GRAPH_GRAYSCALE) {
-        switch (pRsGraph->iOrientation) {
-            case ORIENTATION_PORTRAIT_L: pRsGraph->fnFlip = RsFlip2PortraitL; break;
-            case ORIENTATION_PORTRAIT_R: pRsGraph->fnFlip = RsFlip2PortraitR; break;
-            default:                     pRsGraph->fnFlip = RsFlip2Landscape; break;
-        }
+    RsGraphBindFlip(pRsGraph);
+
+    return TRUE;
+}
+
+BOOL RsGraphSetOrientation(RSGRAPH* pRsGraph, int iOrientation) {
+    int iBmpWidth, iBmpHeight;
+
+    if (!pRsGraph) {
+        return FALSE;
+    }
+
+    if (iOrientation != ORIENTATION_LANDSCAPE &&
+        iOrientation != ORIENTATION_PORTRAIT_L &&
+        iOrientation != ORIENTATION_PORTRAIT_R) {
+        return FALSE;
+    }
+
+    if (iOrientation == pRsGraph->iOrientation) {
+        return TRUE;
+    }
+
+    /* Work out the physical DIB size the new orientation would need. */
+    if (iOrientation == ORIENTATION_LANDSCAPE) {
+        iBmpWidth  = pRsGraph->iWidth;
+        iBmpHeight = pRsGraph->iHeight;
     }
     else {
-        switch (pRsGraph->iOrientation) {
-            case ORIENTATION_PORTRAIT_L: pRsGraph->fnFlip = RsFlip8PortraitL; break;
-            case ORIENTATION_PORTRAIT_R: pRsGraph->fnFlip = RsFlip8PortraitR; break;
-            default:                     pRsGraph->fnFlip = RsFlip8Landscape; break;
-        }
+        iBmpWidth  = pRsGraph->iHeight;
+        iBmpHeight = pRsGraph->iWidth;
     }
+
+    /* Landscape <-> portrait changes the DIB geometry, so the caller has to
+       recreate the DC instead of just rebinding the flip function. */
+    if (iBmpWidth != pRsGraph->iBmpWidth || iBmpHeight != pRsGraph->iBmpHeight) {
+        return FALSE;
+    }
+
+    pRsGraph->iOrientation = iOrientation;
+    RsGraphBindFlip(pRsGraph);
 
     return TRUE;
 }
@@ -449,4 +493,56 @@ void RsGraphPresent(RSGRAPH* pRsGraph, HDC hdc, int iX, int iY) {
 
     BitBlt(hdc, iX, iY, pRsGraph->iBmpWidth, pRsGraph->iBmpHeight,
            pRsGraph->hdcMem, 0, 0, SRCCOPY);
+}
+
+/* -------------------------------------------------------------------------
+   Drawing primitives. All of them clip against the frame buffer, so callers
+   may pass negative origins or sizes that run past the edge.
+   ------------------------------------------------------------------------- */
+
+void RsGraphFillRect(RSGRAPH* pRsGraph, int iX, int iY, int iW, int iH, BYTE bColor) {
+    int x0, y0, x1, y1, x, y;
+
+    if (!pRsGraph || !pRsGraph->pFrameBuf || iW <= 0 || iH <= 0) {
+        return;
+    }
+
+    x0 = iX < 0 ? 0 : iX;
+    y0 = iY < 0 ? 0 : iY;
+    x1 = iX + iW;
+    y1 = iY + iH;
+    if (x1 > pRsGraph->iWidth)  { x1 = pRsGraph->iWidth; }
+    if (y1 > pRsGraph->iHeight) { y1 = pRsGraph->iHeight; }
+    if (x0 >= x1 || y0 >= y1) {
+        return;
+    }
+
+    bColor = (BYTE)(bColor & 3);
+
+    for (y = y0; y < y1; ++y) {
+        BYTE* pRow = pRsGraph->pFrameBuf + (size_t)y * pRsGraph->iWidth;
+
+        for (x = x0; x < x1; ++x) {
+            pRow[x] = bColor;
+        }
+    }
+}
+
+void RsGraphHLine(RSGRAPH* pRsGraph, int iX, int iY, int iW, BYTE bColor) {
+    RsGraphFillRect(pRsGraph, iX, iY, iW, 1, bColor);
+}
+
+void RsGraphVLine(RSGRAPH* pRsGraph, int iX, int iY, int iH, BYTE bColor) {
+    RsGraphFillRect(pRsGraph, iX, iY, 1, iH, bColor);
+}
+
+void RsGraphFrame(RSGRAPH* pRsGraph, int iX, int iY, int iW, int iH, BYTE bColor) {
+    if (!pRsGraph || iW <= 0 || iH <= 0) {
+        return;
+    }
+
+    RsGraphHLine(pRsGraph, iX, iY, iW, bColor);
+    RsGraphHLine(pRsGraph, iX, iY + iH - 1, iW, bColor);
+    RsGraphVLine(pRsGraph, iX, iY, iH, bColor);
+    RsGraphVLine(pRsGraph, iX + iW - 1, iY, iH, bColor);
 }

@@ -95,6 +95,26 @@ void RsGraphFlip(RSGRAPH* pRsGraph);
 /* Blit the DIB to the given device context at iX, iY. */
 void RsGraphPresent(RSGRAPH* pRsGraph, HDC hdc, int iX, int iY);
 
+/* Fill a rectangle with one grey level. Rectangles are clipped to the frame
+   buffer, so negative coordinates and oversized sizes are safe. */
+void RsGraphFillRect(RSGRAPH* pRsGraph, int iX, int iY, int iW, int iH, BYTE bColor);
+
+/* One pixel thick horizontal and vertical lines. */
+void RsGraphHLine(RSGRAPH* pRsGraph, int iX, int iY, int iW, BYTE bColor);
+void RsGraphVLine(RSGRAPH* pRsGraph, int iX, int iY, int iH, BYTE bColor);
+
+/* One pixel thick rectangle outline. */
+void RsGraphFrame(RSGRAPH* pRsGraph, int iX, int iY, int iW, int iH, BYTE bColor);
+
+/* Change the orientation at run time. Portrait left and right share the same
+   physical DIB size, so this only rebinds fnFlip. Returns FALSE when the new
+   orientation needs a different DIB size, which means landscape <-> portrait;
+   in that case the graph is left untouched and the DC has to be recreated.
+   Note: RsGraphInit stores the window DC used to derive the memory DC, but
+   only RsGraphCreateDC needs it, so switching between the two portrait
+   orientations works even after the caller released that DC. */
+BOOL RsGraphSetOrientation(RSGRAPH* pRsGraph, int iOrientation);
+
 /* Cell size of the built in 6x8 bitmap font, in pixels. */
 #define RS_FONT_WIDTH       6
 #define RS_FONT_HEIGHT      8

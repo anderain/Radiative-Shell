@@ -2,6 +2,7 @@
 #include <commctrl.h>
 #include "resource.h"
 #include "rshell.h"
+#include "pipboy.h"
 
 ATOM                MyRegisterClass     (HINSTANCE hInstance, LPTSTR szWindowClass);
 BOOL                InitInstance        (HINSTANCE, int);
@@ -22,6 +23,7 @@ HINSTANCE           hInst;
 static RSGRAPH      g_rsGraph;
 static BOOL         g_bGraphReady  = FALSE;
 static int          g_iOrientation = RS_DEFAULT_ORIENTATION;
+static int          g_iActiveTab   = PB_TAB_STATS;
 
 #ifndef VER_PLATFORM_WIN32_CE
 /* -------------------------------------------------------------------------
@@ -123,76 +125,37 @@ static int DetectCeOrientation(HWND hWnd) {
 }
 #endif /* VER_PLATFORM_WIN32_CE */
 
-/* Fill an axis aligned rectangle with one grey level. */
-static void FillTestRect(RSGRAPH* pRsGraph, int iX, int iY, int iW, int iH, BYTE bColor) {
-    int x, y;
+/* Draw the whole shell into the frame buffer and push the result into the
+   DIB. Safe to call when the graph is not ready yet. */
+static void RedrawScreen(void) {
+    if (!g_bGraphReady) {
+        return;
+    }
 
-    for (y = 0; y < iH; ++y) {
-        for (x = 0; x < iW; ++x) {
-            RsGraphSetPixel(pRsGraph, iX + x, iY + y, bColor);
-        }
+    PbDrawScreen(&g_rsGraph, g_iActiveTab);
+    RsGraphFlip(&g_rsGraph);
+}
+
+/* Direction down while in a portrait orientation mirrors the picture. The
+   physical DIB size does not change between the two portrait rotations, so
+   the memory DC can be kept. Landscape ignores this key. */
+static void TogglePortraitOrientation(void) {
+    int iNew;
+
+    if (!g_bGraphReady || g_iOrientation == ORIENTATION_LANDSCAPE) {
+        return;
+    }
+
+    iNew = (g_iOrientation == ORIENTATION_PORTRAIT_L)
+         ? ORIENTATION_PORTRAIT_R
+         : ORIENTATION_PORTRAIT_L;
+
+    if (RsGraphSetOrientation(&g_rsGraph, iNew)) {
+        g_iOrientation = iNew;
     }
 }
 
-/* Draw enough asymmetry to tell the three orientations apart: a white block
-   in the logical top left corner ends up in a different physical corner for
-   each rotation, and the text stays readable in the logical orientation. */
-static void DrawTestPattern(RSGRAPH* pRsGraph) {
-    const int iWidth  = pRsGraph->iWidth;
-    const int iHeight = pRsGraph->iHeight;
-    const int iBandW  = iWidth / 4;
-    const int iBandH  = 24;
-    int       i, x, y;
-
-    /* Background */
-    FillTestRect(pRsGraph, 0, 0, iWidth, iHeight, RS_GRAY_DARK);
-
-    /* Four levels across the top: black, dark, pale and full green */
-    for (i = 0; i < 4; ++i) {
-        FillTestRect(pRsGraph, i * iBandW, 0, iBandW, iBandH, (BYTE)i);
-    }
-
-    /* Logical top left marker and an opposite marker on the top right */
-    FillTestRect(pRsGraph, 0, iBandH, 16, 16, RS_GRAY_WHITE);
-    FillTestRect(pRsGraph, iWidth - 16, iBandH, 16, 16, RS_GRAY_BLACK);
-
-    /* Border, drawn last so it stays visible */
-    for (x = 0; x < iWidth; ++x) {
-        RsGraphSetPixel(pRsGraph, x, 0, RS_GRAY_WHITE);
-        RsGraphSetPixel(pRsGraph, x, iHeight - 1, RS_GRAY_WHITE);
-    }
-    for (y = 0; y < iHeight; ++y) {
-        RsGraphSetPixel(pRsGraph, 0, y, RS_GRAY_WHITE);
-        RsGraphSetPixel(pRsGraph, iWidth - 1, y, RS_GRAY_WHITE);
-    }
-
-    /* Diagonal from the top left to the bottom right */
-    for (i = 0; i < iWidth && i < iHeight; ++i) {
-        RsGraphSetPixel(pRsGraph, i, i, RS_GRAY_LIGHT);
-    }
-
-    /* Text drawn with the built in 6x8 font. Narrow literals on purpose,
-       the font maps bytes even when the build is UNICODE. */
-    RsGraphDrawText(pRsGraph, 24, iBandH + 24,
-                    (const unsigned char *)"RadiativeShell", RS_GRAY_WHITE);
-    RsGraphDrawText(pRsGraph, 24, iBandH + 40,
-                    (const unsigned char *)"6x8 bitmap font 0123456789", RS_GRAY_LIGHT);
-
-    if (g_iOrientation == ORIENTATION_PORTRAIT_L) {
-        RsGraphDrawText(pRsGraph, 24, iBandH + 56,
-                        (const unsigned char *)"orientation: left", RS_GRAY_WHITE);
-    }
-    else if (g_iOrientation == ORIENTATION_PORTRAIT_R) {
-        RsGraphDrawText(pRsGraph, 24, iBandH + 56,
-                        (const unsigned char *)"orientation: right", RS_GRAY_WHITE);
-    }
-    else {
-        RsGraphDrawText(pRsGraph, 24, iBandH + 56,
-                        (const unsigned char *)"orientation: landscape", RS_GRAY_WHITE);
-    }
-}
-
-/* Build the graph, paint the test pattern and push it into the DIB. */
+/* Build the graph, draw the shell and push it into the DIB. */
 static BOOL InitGraph(HWND hWnd) {
     HDC             hdc;
     RSDEVICEINFO    deviceInfo;
@@ -218,13 +181,14 @@ static BOOL InitGraph(HWND hWnd) {
 
     ReleaseDC(hWnd, hdc);
 
-    /* hdcMainWin was only needed to derive the memory DC and is invalid now. */
+    /* hdcMainWin was only needed to derive the memory DC and is invalid now.
+       Switching between the two portrait rotations only rebinds fnFlip, which
+       never touches hdcMainWin, so it stays NULL on purpose. */
     g_rsGraph.hdcMainWin = NULL;
 
-    DrawTestPattern(&g_rsGraph);
-    RsGraphFlip(&g_rsGraph);
-
     g_bGraphReady = TRUE;
+    RedrawScreen();
+
     return TRUE;
 }
 
@@ -333,22 +297,50 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
     HDC hdc;
-    int wmId, wmEvent;
+    int wmId;
     PAINTSTRUCT ps;
     RECT rectClient;
 
     switch (message) {
         case WM_COMMAND:
-            wmId    = LOWORD(wParam); 
-            wmEvent = HIWORD(wParam); 
+            wmId = LOWORD(wParam);
             switch (wmId) {
+                case IDM_FILE_EXIT:
+                    DestroyWindow(hWnd);
+                    return 0;
                 default:
-                   return DefWindowProc(hWnd, message, wParam, lParam);
+                    return DefWindowProc(hWnd, message, wParam, lParam);
             }
-            break;
         case WM_KEYDOWN:
-            if (wParam == VK_TAB || wParam == VK_ESCAPE) {
-                DestroyWindow(hWnd);
+            switch (wParam) {
+                case VK_ESCAPE:
+                case VK_RETURN:
+                    DestroyWindow(hWnd);
+                    break;
+                case VK_UP:
+                    g_iActiveTab = PbNextTab(g_iActiveTab);
+                    RedrawScreen();
+                    InvalidateRect(hWnd, NULL, TRUE);
+                    break;
+                case VK_DOWN:
+                    /* Auto repeat would flip the picture dozens of times per
+                       second, so only react to the initial key press. */
+                    if (!(lParam & 0x40000000)) {
+                        TogglePortraitOrientation();
+                        RedrawScreen();
+                        InvalidateRect(hWnd, NULL, TRUE);
+                    }
+                    break;
+                default: {
+                    const int iTab = PbTabFromKey((int)wParam);
+
+                    if (iTab >= 0 && iTab != g_iActiveTab) {
+                        g_iActiveTab = iTab;
+                        RedrawScreen();
+                        InvalidateRect(hWnd, NULL, TRUE);
+                    }
+                    break;
+                }
             }
             break;
         case WM_CREATE:
