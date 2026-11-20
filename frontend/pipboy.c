@@ -510,14 +510,16 @@ static void PbDrawBatteryBar(RSGRAPH* pRsGraph, int iX, int iY, int iW, int iH,
 }
 
 /* Right hand column of the stats page: a battery report with a charge bar.
-   The label column has a fixed width so every value starts at the same x. */
+   The label column is sized to the longest label plus a small gap, so the
+   values start close to the labels instead of after a wide empty band. */
 static void PbDrawBatteryReport(RSGRAPH* pRsGraph, const RS_POWER_INFO* pPower,
                                 int iLeft, int iRight, int iTop, int iBottom) {
     unsigned char aPercent[8];
     unsigned char aLife[16];
     unsigned char aFull[16];
     const int iW = iRight - iLeft + 1;
-    const int iLabelW = 14 * RS_FONT_WIDTH;
+    /* "BATTERY" is the longest label at 7 characters, two spaces of gap. */
+    const int iLabelW = 9 * RS_FONT_WIDTH;
     const int iValueX = iLeft + iLabelW;
     const int iBarH = 10;
     const int iRowH = RS_FONT_HEIGHT;
@@ -632,8 +634,18 @@ static void PbDrawStatsPage(RSGRAPH* pRsGraph, const RS_POWER_INFO* pPower,
     }
 
     if (pPower && iReportLeft < iRight) {
-        PbDrawBatteryReport(pRsGraph, pPower, iReportLeft, iRight - 8,
-                            iTop, iBottom);
+        const int iAvail = iRight - 8 - iReportLeft + 1;
+        int iReportW = iAvail;
+
+        /* Keep the report narrower than the band it sits in, so it does not
+           stretch all the way to the content frame. Left aligned, right after
+           the artwork. */
+        if (iReportW > PB_STATS_REPORT_MAX_W) {
+            iReportW = PB_STATS_REPORT_MAX_W;
+        }
+
+        PbDrawBatteryReport(pRsGraph, pPower, iReportLeft,
+                            iReportLeft + iReportW - 1, iTop, iBottom);
     }
 }
 

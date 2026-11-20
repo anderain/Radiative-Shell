@@ -31,6 +31,11 @@
 #define PB_LOGO_INSET_RIGHT 2
 #define PB_LOGO_MIN_GAP     6
 
+/* Widest the battery report block may get. The content column is wider than
+   the report needs, so the block is capped and the remaining space on the
+   right stays empty. */
+#define PB_STATS_REPORT_MAX_W   150
+
 /* Draw the complete shell: tabs, content area and status bar.
    pTime    - clock snapshot, only used by the clock tab, may be NULL.
    pSysInfo - GetSystemInfo result, only used by the system tab, may be NULL.
