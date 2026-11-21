@@ -37,7 +37,6 @@
 /* Buffer sizes used by callers of this module. */
 #define CFG_PATH_TEXT           260
 #define CFG_ERROR_TEXT          160
-#define CFG_STATUS_TEXT         2048
 
 /* Launcher slot program type. */
 #define RSHL_TYPE_DEVELOPMENT   0
@@ -64,7 +63,7 @@ typedef struct _RSHL_KEYS {
     int     iActionPrev;        /* previous item in the content   */
     int     iActionNext;        /* next item in the content       */
     int     iThemeSwitch;       /* cycle the colour theme         */
-    int     iConfirm;           /* confirm / launch               */
+    int     iAction;            /* confirm / launch               */
 } RSHL_KEYS;
 
 typedef struct _RSHL_SLOT {

@@ -5,6 +5,7 @@
 #include <string.h>
 #include "resource.h"
 #include "../../config/config.h"
+#include "../../frontend/vga_palette.h"
 
 HINSTANCE        	hInst;
 HWND                hwndCB;
@@ -12,8 +13,8 @@ HWND                hwndCB;
 /* Configuration currently in the editor and the file it came from. */
 static RSHL_CONFIG  g_cfg;
 static char         g_szPath[CFG_PATH_TEXT];
-static char         g_szStatus[CFG_STATUS_TEXT];
 static HFONT        g_hFont;
+static HFONT        g_hFontBold;
 
 ATOM                MyRegisterClass	(HINSTANCE hInstance, LPTSTR szWindowClass);
 BOOL                InitInstance	(HINSTANCE, int);
@@ -91,131 +92,224 @@ static void ShowAnsiMessage(HWND hWnd, const char* pText, const TCHAR* pCaption,
     MessageBox(hWnd, szText, pCaption, uType);
 }
 
-static void StatusAppend(const char* pText) {
-    const int iLen = (int)strlen(g_szStatus);
-    int i = 0;
+/* -------------------------------------------------------------------------
+   Small text helpers used by the paint code.
+   ------------------------------------------------------------------------- */
 
-    while (pText[i] && iLen + i < (int)sizeof(g_szStatus) - 1) {
-        g_szStatus[iLen + i] = pText[i];
-        ++i;
+/* Bounded TCHAR copy and append, so the labels need no printf family. */
+static void CopyText(TCHAR* pDst, int cchDst, const TCHAR* pSrc) {
+    int i;
+
+    if (!pDst || cchDst <= 0) {
+        return;
     }
-    g_szStatus[iLen + i] = 0;
+
+    for (i = 0; pSrc && pSrc[i] && i < cchDst - 1; ++i) {
+        pDst[i] = pSrc[i];
+    }
+    pDst[i] = 0;
 }
 
-static void StatusAppendDec(int iValue) {
-    char aText[12];
-    char aOne[2];
-    int  iCount = 0;
+static void AppendText(TCHAR* pDst, int cchDst, const TCHAR* pSrc) {
+    int iLen = 0;
+    int i = 0;
+
+    while (iLen < cchDst - 1 && pDst[iLen]) {
+        ++iLen;
+    }
+
+    while (pSrc && pSrc[i] && iLen < cchDst - 1) {
+        pDst[iLen++] = pSrc[i++];
+    }
+
+    pDst[iLen] = 0;
+}
+
+static void AppendDec(TCHAR* pDst, int cchDst, int iValue) {
+    TCHAR aText[12];
+    TCHAR aOne[2];
+    int   iCount = 0;
 
     if (iValue < 0) {
-        StatusAppend("-");
+        AppendText(pDst, cchDst, TEXT("-"));
         iValue = -iValue;
     }
 
     do {
-        aText[iCount++] = (char)('0' + (iValue % 10));
+        aText[iCount++] = (TCHAR)(TEXT('0') + (iValue % 10));
         iValue /= 10;
-    } while (iValue > 0 && iCount < (int)sizeof(aText));
+    } while (iValue > 0 && iCount < (int)(sizeof(aText) / sizeof(aText[0])));
 
     aOne[1] = 0;
     while (iCount > 0) {
         aOne[0] = aText[--iCount];
-        StatusAppend(aOne);
+        AppendText(pDst, cchDst, aOne);
     }
 }
 
-static void StatusAppendHex(BYTE bValue) {
-    static const char kHex[] = "0123456789ABCDEF";
-    char aText[3];
+/* -------------------------------------------------------------------------
+   Client area layout. The window is a fixed 240x320 on the desktop, so the
+   rows are laid out top down from constants rather than measured.
+   ------------------------------------------------------------------------- */
 
-    aText[0] = kHex[(bValue >> 4) & 0x0F];
-    aText[1] = kHex[bValue & 0x0F];
-    aText[2] = 0;
-    StatusAppend(aText);
+#define UI_MARGIN       8
+#define UI_LINE_H       20
+#define UI_SECTION_GAP  10
+#define UI_SWATCH_W     30
+#define UI_SWATCH_H     18
+#define UI_SWATCH_GAP   6
+#define UI_SWATCH_X     76
+#define UI_COL2_X       124
+#define UI_THEME_ROW_H  40
+
+/* Draw one line of text top left aligned, selecting pFont for the call. */
+static void DrawLine(HDC hdc, int iX, int iY, const TCHAR* pText, HFONT hFont) {
+    HFONT hOld;
+
+    if (!pText || !*pText) {
+        return;
+    }
+
+    hOld = (HFONT)SelectObject(hdc, hFont);
+    TextOut(hdc, iX, iY, pText, (int)_tcslen(pText));
+    SelectObject(hdc, hOld);
 }
 
-/* Rebuild the text shown in the client area from the current configuration. */
-static void RefreshStatusText(void) {
-    int i;
+/* Fetch the VGA colour for a palette index as a COLORREF. */
+static COLORREF SwatchColor(BYTE bIndex) {
+    const DWORD color = VGA_MODE13H_COLORPALETTE[bIndex];
 
-    g_szStatus[0] = 0;
+    return RGB((BYTE)((color >> 16) & 0xFF),
+               (BYTE)((color >> 8) & 0xFF),
+               (BYTE)(color & 0xFF));
+}
 
-    StatusAppend("RSHL Config");
-    StatusAppend("\n\nFile: ");
-    StatusAppend(g_szPath[0] ? g_szPath : "(none)");
+/* One theme row: the index, the four swatches and their hex byte values. */
+static void DrawThemeRow(HDC hdc, int iY, int iIndex) {
+    TCHAR    aLabel[24];
+    HPEN     hPen;
+    HPEN     hOldPen;
+    int      j;
+    const COLORREF kFrame = RGB(0x80, 0x80, 0x80);
 
-    for (i = 0; i < RSHL_THEME_COUNT; ++i) {
-        int j;
+    aLabel[0] = 0;
+    AppendText(aLabel, (int)(sizeof(aLabel) / sizeof(aLabel[0])), TEXT("Theme "));
+    AppendDec(aLabel, (int)(sizeof(aLabel) / sizeof(aLabel[0])), iIndex);
+    DrawLine(hdc, UI_MARGIN, iY, aLabel, g_hFont);
 
-        StatusAppend("\n\nTheme ");
-        StatusAppendDec(i);
-        StatusAppend(" : ");
-        for (j = 0; j < 4; ++j) {
-            if (j > 0) {
-                StatusAppend(" ");
-            }
-            StatusAppendHex(g_cfg.aThemes[i].bColors[j]);
+    /* A neutral outline keeps the near black swatches visible. */
+    hPen    = CreatePen(PS_SOLID, 1, kFrame);
+    hOldPen = (HPEN)SelectObject(hdc, hPen ? hPen : GetStockObject(BLACK_PEN));
+
+    for (j = 0; j < 4; ++j) {
+        const int iX = UI_SWATCH_X + j * (UI_SWATCH_W + UI_SWATCH_GAP);
+        HBRUSH hBrush = CreateSolidBrush(SwatchColor(g_cfg.aThemes[iIndex].bColors[j]));
+
+        if (hBrush) {
+            HBRUSH hOldBrush = (HBRUSH)SelectObject(hdc, hBrush);
+
+            Rectangle(hdc, iX, iY, iX + UI_SWATCH_W, iY + UI_SWATCH_H);
+
+            SelectObject(hdc, hOldBrush);
+            DeleteObject(hBrush);
         }
     }
 
-    StatusAppend("\n\nKeys    : tab=");
-    StatusAppendDec(g_cfg.keys.iTabSwitch);
-    StatusAppend(" flip=");
-    StatusAppendDec(g_cfg.keys.iFlipScreen);
-    StatusAppend(" prev=");
-    StatusAppendDec(g_cfg.keys.iActionPrev);
-    StatusAppend(" next=");
-    StatusAppendDec(g_cfg.keys.iActionNext);
-    StatusAppend(" theme=");
-    StatusAppendDec(g_cfg.keys.iThemeSwitch);
-    StatusAppend(" ok=");
-    StatusAppendDec(g_cfg.keys.iConfirm);
-
-    StatusAppend("\n\nSlots   : ");
-    StatusAppendDec(g_cfg.iSlotCount);
-    StatusAppend(" of ");
-    StatusAppendDec(RSHL_SLOT_MAX);
-
-    for (i = 0; i < g_cfg.iSlotCount; ++i) {
-        const char* pTypeName = ConfigSlotTypeName(g_cfg.aSlots[i].iType);
-
-        StatusAppend("\n  ");
-        StatusAppendDec(i);
-        StatusAppend("  ");
-        StatusAppendDec(g_cfg.aSlots[i].iType);
-        StatusAppend(" ");
-        StatusAppend(pTypeName ? pTypeName : "Unknown");
-        StatusAppend("  ");
-        StatusAppend(g_cfg.aSlots[i].szName);
+    SelectObject(hdc, hOldPen);
+    if (hPen) {
+        DeleteObject(hPen);
     }
 
-    if (!g_cfg.bValid) {
-        StatusAppend("\n\nBuilt in defaults, nothing has been read yet.");
+    /* The four palette indexes, spaced to sit under their swatches. */
+    for (j = 0; j < 4; ++j) {
+        static const TCHAR kHex[] = TEXT("0123456789ABCDEF");
+        const BYTE  bValue = g_cfg.aThemes[iIndex].bColors[j];
+        TCHAR       aHex[4];
+
+        aHex[0] = kHex[(bValue >> 4) & 0x0F];
+        aHex[1] = kHex[bValue & 0x0F];
+        aHex[2] = 0;
+
+        DrawLine(hdc, UI_SWATCH_X + j * (UI_SWATCH_W + UI_SWATCH_GAP) + 3,
+                 iY + UI_SWATCH_H + 2, aHex, g_hFont);
     }
+}
+
+/* One key mapping cell: a label and its virtual key code, side by side. */
+static void DrawKeyCell(HDC hdc, int iX, int iY, const TCHAR* pLabel, int iKey) {
+    TCHAR aValue[16];
+
+    DrawLine(hdc, iX, iY, pLabel, g_hFont);
+
+    aValue[0] = 0;
+    AppendDec(aValue, (int)(sizeof(aValue) / sizeof(aValue[0])), iKey);
+    DrawLine(hdc, iX + 52, iY, aValue, g_hFont);
+}
+
+/* Width of pText in the UI font. */
+static int TextWidth(HDC hdc, const TCHAR* pText) {
+    SIZE  size;
+    HFONT hOld = (HFONT)SelectObject(hdc, g_hFont);
+
+    size.cx = 0;
+    size.cy = 0;
+    GetTextExtentPoint32(hdc, pText, (int)_tcslen(pText), &size);
+    SelectObject(hdc, hOld);
+
+    return size.cx;
+}
+
+/* The current file name along the bottom edge. A path that is too wide is
+   trimmed from the front, because the file name is the useful part. */
+static void DrawPathLine(HDC hdc, int iX, int iY, int iWidth) {
+    TCHAR aPath[CFG_PATH_TEXT];
+    TCHAR aText[CFG_PATH_TEXT + 8];
+    int   iStart = 0;
+    int   iLen;
+    int   iRoom;
+
+    AnsiToTChar(g_szPath, aPath, CFG_PATH_TEXT);
+    if (!aPath[0]) {
+        CopyText(aPath, CFG_PATH_TEXT, TEXT("(no file)"));
+    }
+
+    CopyText(aText, (int)(sizeof(aText) / sizeof(aText[0])), aPath);
+    iLen = (int)_tcslen(aPath);
+
+    /* The leading dots take room of their own, so the tail is measured
+       against what is left once they are accounted for. */
+    iRoom = iWidth - TextWidth(hdc, TEXT("..."));
+
+    while (iStart < iLen && TextWidth(hdc, aPath + iStart) > iRoom) {
+        ++iStart;
+    }
+
+    if (iStart > 0) {
+        aText[0] = TEXT('.');
+        aText[1] = TEXT('.');
+        aText[2] = TEXT('.');
+        CopyText(aText + 3, (int)(sizeof(aText) / sizeof(aText[0])) - 3,
+                 aPath + iStart);
+    }
+
+    DrawLine(hdc, iX, iY, aText, g_hFont);
 }
 
 /* -------------------------------------------------------------------------
    Loading and saving.
    ------------------------------------------------------------------------- */
 
-/* Load pszPath into g_cfg. On failure the defaults are kept and the reason is
-   both shown in a message box and written into the client area. */
+/* Load pszPath into g_cfg. A file that does not parse leaves the current
+   configuration alone and reports the reason in a message box: the client
+   area has no room for an error block, and the fixed layout is meant to show
+   a valid configuration only. */
 static BOOL LoadConfigFile(HWND hWnd, const char* pszPath) {
-    char szError[CFG_ERROR_TEXT];
+    char        szError[CFG_ERROR_TEXT];
     RSHL_CONFIG loaded;
 
     szError[0] = 0;
 
     if (!ConfigLoad(pszPath, &loaded, szError, (int)sizeof(szError))) {
-        g_szPath[0] = 0;
-        g_cfg.bValid = FALSE;
-        g_szStatus[0] = 0;
-        StatusAppend("RSHL Config");
-        StatusAppend("\n\nCould not load:\n  ");
-        StatusAppend(pszPath);
-        StatusAppend("\n\n");
-        StatusAppend(szError);
-
         if (hWnd) {
             ShowAnsiMessage(hWnd, szError, TEXT("Load failed"),
                             MB_OK | MB_ICONERROR);
@@ -225,7 +319,6 @@ static BOOL LoadConfigFile(HWND hWnd, const char* pszPath) {
 
     g_cfg = loaded;
     CopyAnsi(g_szPath, (int)sizeof(g_szPath), pszPath);
-    RefreshStatusText();
 
     if (hWnd) {
         InvalidateRect(hWnd, NULL, TRUE);
@@ -279,7 +372,6 @@ static void DoFileDialog(HWND hWnd, BOOL bSave) {
         }
 
         CopyAnsi(g_szPath, (int)sizeof(g_szPath), szPath);
-        RefreshStatusText();
         InvalidateRect(hWnd, NULL, TRUE);
     }
     else {
@@ -363,17 +455,45 @@ ATOM MyRegisterClass(HINSTANCE hInstance, LPTSTR szWindowClass) {
 BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 {
     HWND    hWnd;
-    TCHAR    szTitle[] = TEXT("RSHL Config");
-    TCHAR    szWindowClass[] = TEXT("RSHL_MAIN_WIN");
+    TCHAR   szTitle[] = TEXT("RSHL Config");
+    TCHAR   szWindowClass[] = TEXT("RSHL_MAIN_WIN");
+    int     iWinWidth, iWinHeight;
+    DWORD   dwStyle;
 
     hInst = hInstance;
     MyRegisterClass(hInstance, szWindowClass);
 
     ConfigSetDefaults(&g_cfg);
     g_szPath[0] = 0;
-    RefreshStatusText();
 
-    hWnd = CreateWindow(szWindowClass, szTitle, WS_VISIBLE, 0, 0, CW_USEDEFAULT, CW_USEDEFAULT, NULL, NULL, hInstance, NULL);
+#ifdef VER_PLATFORM_WIN32_CE
+    {
+        dwStyle     = WS_VISIBLE;
+        iWinWidth   = GetSystemMetrics(SM_CXSCREEN);
+        iWinHeight  = GetSystemMetrics(SM_CYSCREEN);
+    }
+#else
+    {
+        RECT rectWindow;
+
+        dwStyle = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
+
+        /* Ask for a fixed 240x320 client area; AdjustWindowRect adds the
+           frame. bMenu is TRUE because the class attaches IDM_MENU and the
+           menu bar sits in the non client area, so it has to be reserved or
+           it silently takes its height out of the client. */
+        rectWindow.left   = 0;
+        rectWindow.top    = 0;
+        rectWindow.right  = 240;
+        rectWindow.bottom = 320;
+        AdjustWindowRect(&rectWindow, dwStyle, TRUE);
+
+        iWinWidth  = rectWindow.right - rectWindow.left;
+        iWinHeight = rectWindow.bottom - rectWindow.top;
+    }
+#endif
+
+    hWnd = CreateWindow(szWindowClass, szTitle, dwStyle, 0, 0, iWinWidth, iWinHeight, NULL, NULL, hInstance, NULL);
 
     if (!hWnd) {    
         return FALSE;
@@ -393,40 +513,90 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 /* -------------------------------------------------------------------------
    Font. Tahoma at 8 points, the same face the About dialog asks the loader
    for, so the client area and the dialog match.
+
+   CreateFontIndirect is used rather than CreateFont because the Windows CE
+   build this tool also targets does not export CreateFont at all.
    ------------------------------------------------------------------------- */
 
-static HFONT CreateUiFont(void) {
-    HDC  hdc = GetDC(NULL);
-    int  iHeight = -11;
-    HFONT hFont;
+static HFONT CreateUiFont(int iWeight) {
+    HFONT   hFont;
+    LOGFONT logfont;
 
-    if (hdc) {
-        const int iDpi = GetDeviceCaps(hdc, LOGPIXELSY);
+    memset(&logfont, 0, sizeof(logfont));
 
-        if (iDpi > 0) {
-            iHeight = -((8 * iDpi + 36) / 72);
-        }
-        ReleaseDC(NULL, hdc);
-    }
+    logfont.lfHeight         = 16;
+    logfont.lfWidth          = 0;
+    logfont.lfEscapement     = 0;
+    logfont.lfOrientation    = 0;
+    logfont.lfWeight         = iWeight;
+    logfont.lfItalic         = FALSE;
+    logfont.lfUnderline      = FALSE;
+    logfont.lfStrikeOut      = FALSE;
+    logfont.lfCharSet        = DEFAULT_CHARSET;
+    logfont.lfOutPrecision   = OUT_DEFAULT_PRECIS;
+    logfont.lfClipPrecision  = CLIP_DEFAULT_PRECIS;
+    logfont.lfQuality        = DEFAULT_QUALITY;
+    logfont.lfPitchAndFamily = DEFAULT_PITCH | FF_DONTCARE;
+    _tcscpy(logfont.lfFaceName, TEXT("Tahoma"));
 
-    hFont = CreateFont(
-        iHeight, 0, 0, 0,
-        FW_NORMAL,
-        FALSE, FALSE, FALSE,
-        DEFAULT_CHARSET,
-        OUT_DEFAULT_PRECIS,
-        CLIP_DEFAULT_PRECIS,
-        DEFAULT_QUALITY,
-        DEFAULT_PITCH | FF_SWISS,
-        TEXT("Tahoma"));
+    hFont = CreateFontIndirect(&logfont);
 
     return hFont;
 }
 
+/* Repaint the whole client area from g_cfg. Rows are positioned from the
+   constants above, so the picture does not depend on measuring text. */
+static void PaintClient(HDC hdc, const RECT* pRect) {
+    TCHAR aText[64];
+    int   iY;
+    int   i;
+
+    FillRect(hdc, pRect, (HBRUSH)GetStockObject(WHITE_BRUSH));
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, RGB(0, 0, 0));
+
+    iY = UI_MARGIN;
+
+    /* Theme section. */
+    DrawLine(hdc, UI_MARGIN, iY, TEXT("Theme"), g_hFontBold);
+    iY += UI_LINE_H;
+
+    for (i = 0; i < RSHL_THEME_COUNT; ++i) {
+        DrawThemeRow(hdc, iY, i);
+        iY += UI_THEME_ROW_H;
+    }
+
+    /* Keys section, two columns of three. */
+    iY += UI_SECTION_GAP;
+    DrawLine(hdc, UI_MARGIN, iY, TEXT("Keys"), g_hFontBold);
+    iY += UI_LINE_H;
+
+    DrawKeyCell(hdc, UI_MARGIN, iY, TEXT("Tab"),    g_cfg.keys.iTabSwitch);
+    DrawKeyCell(hdc, UI_COL2_X, iY, TEXT("Next"),   g_cfg.keys.iActionNext);
+    iY += UI_LINE_H;
+
+    DrawKeyCell(hdc, UI_MARGIN, iY, TEXT("Flip"),   g_cfg.keys.iFlipScreen);
+    DrawKeyCell(hdc, UI_COL2_X, iY, TEXT("Theme"),  g_cfg.keys.iThemeSwitch);
+    iY += UI_LINE_H;
+
+    DrawKeyCell(hdc, UI_MARGIN, iY, TEXT("Prev"),   g_cfg.keys.iActionPrev);
+    DrawKeyCell(hdc, UI_COL2_X, iY, TEXT("Action"), g_cfg.keys.iAction);
+    iY += UI_LINE_H;
+
+    /* Slot count. */
+    iY += UI_SECTION_GAP;
+    aText[0] = 0;
+    AppendText(aText, (int)(sizeof(aText) / sizeof(aText[0])), TEXT("Slots: "));
+    AppendDec(aText, (int)(sizeof(aText) / sizeof(aText[0])), g_cfg.iSlotCount);
+    AppendText(aText, (int)(sizeof(aText) / sizeof(aText[0])), TEXT(" of "));
+    AppendDec(aText, (int)(sizeof(aText) / sizeof(aText[0])), RSHL_SLOT_MAX);
+    DrawLine(hdc, UI_MARGIN, iY, aText, g_hFont);
+}
+
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
-    HDC hdc;
+    HDC         hdc;
     PAINTSTRUCT ps;
-    RECT rt;
+    RECT        rt;
 
     switch (message)  {
         case WM_COMMAND:
@@ -448,7 +618,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
             }
             break;
         case WM_CREATE:
-            g_hFont = CreateUiFont();
+            g_hFont     = CreateUiFont(FW_NORMAL);
+            g_hFontBold = CreateUiFont(FW_BOLD);
 #ifdef VER_PLATFORM_WIN32_CE
             hwndCB = CommandBar_Create(hInst, hWnd, 1);
             CommandBar_InsertMenubar(hwndCB, hInst, IDM_MENU, 0);
@@ -458,16 +629,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         case WM_PAINT:
             hdc = BeginPaint(hWnd, &ps);
             GetClientRect(hWnd, &rt);
-            {
-                TCHAR  szStatus[CFG_STATUS_TEXT];
-                HFONT  hOld;
+            PaintClient(hdc, &rt);
 
-                AnsiToTChar(g_szStatus, szStatus, CFG_STATUS_TEXT);
-                hOld = (HFONT)SelectObject(hdc, g_hFont ? g_hFont : GetStockObject(SYSTEM_FONT));
-                DrawText(hdc, szStatus, -1, &rt,
-                    DT_LEFT | DT_TOP | DT_NOPREFIX);
-                SelectObject(hdc, hOld);
-            }
+            /* The current file name sits on the bottom edge, in its own
+               column so it stays put when the rows above are reflowed. */
+            DrawPathLine(hdc, UI_MARGIN, rt.bottom - UI_MARGIN - 16,
+                         rt.right - 2 * UI_MARGIN);
             EndPaint(hWnd, &ps);
             break;
         case WM_DESTROY:
@@ -477,6 +644,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
             if (g_hFont) {
                 DeleteObject(g_hFont);
                 g_hFont = NULL;
+            }
+            if (g_hFontBold) {
+                DeleteObject(g_hFontBold);
+                g_hFontBold = NULL;
             }
             PostQuitMessage(0);
             break;

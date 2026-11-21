@@ -544,7 +544,7 @@ void ConfigSetDefaults(RSHL_CONFIG* pConfig) {
     pConfig->keys.iActionPrev  = 38;    /* VK_UP     */
     pConfig->keys.iActionNext  = 40;    /* VK_DOWN   */
     pConfig->keys.iThemeSwitch = 32;    /* VK_SPACE  */
-    pConfig->keys.iConfirm     = 13;    /* VK_RETURN */
+    pConfig->keys.iAction      = 13;    /* VK_RETURN */
 
     pConfig->iSlotCount   = 0;
     pConfig->iActiveTheme = 0;
@@ -645,7 +645,7 @@ BOOL ConfigLoad(const char* pszPath, RSHL_CONFIG* pConfig,
             aKeys[2] = &pConfig->keys.iActionPrev;
             aKeys[3] = &pConfig->keys.iActionNext;
             aKeys[4] = &pConfig->keys.iThemeSwitch;
-            aKeys[5] = &pConfig->keys.iConfirm;
+            aKeys[5] = &pConfig->keys.iAction;
 
             bOk = CfgTakeKey(pLine, iLineNo, aKeys[iKey], pError, iErrorSize);
         }
@@ -720,7 +720,7 @@ BOOL ConfigSave(const char* pszPath, const RSHL_CONFIG* pConfig,
     CfgWriteDec(&writer, pConfig->keys.iActionPrev);  CfgWrite(&writer, "   # Action prev\r\n");
     CfgWriteDec(&writer, pConfig->keys.iActionNext);  CfgWrite(&writer, "   # Action next\r\n");
     CfgWriteDec(&writer, pConfig->keys.iThemeSwitch); CfgWrite(&writer, "   # Theme switch\r\n");
-    CfgWriteDec(&writer, pConfig->keys.iConfirm);     CfgWrite(&writer, "   # Confirm\r\n");
+    CfgWriteDec(&writer, pConfig->keys.iAction);      CfgWrite(&writer, "   # Action\r\n");
 
     CfgWrite(&writer, "# Launcher Slots\r\n");
     for (i = 0; i < pConfig->iSlotCount; ++i) {
