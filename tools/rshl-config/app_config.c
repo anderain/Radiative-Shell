@@ -22,6 +22,8 @@ BOOL                InitInstance	(HINSTANCE, int);
 LRESULT CALLBACK    WndProc			(HWND, UINT, WPARAM, LPARAM);
 LRESULT CALLBACK    About			(HWND, UINT, WPARAM, LPARAM);
 LRESULT CALLBACK    ThemeDlgProc	(HWND, UINT, WPARAM, LPARAM);
+LRESULT CALLBACK    KeyDlgProc		(HWND, UINT, WPARAM, LPARAM);
+LRESULT CALLBACK    KeyCaptureDlgProc(HWND, UINT, WPARAM, LPARAM);
 
 /* -------------------------------------------------------------------------
    Text helpers. config.c speaks ANSI, the window speaks TCHAR, so the two
@@ -835,6 +837,309 @@ static void ShowThemeEditor(HWND hWnd) {
     }
 }
 
+/* -------------------------------------------------------------------------
+   Key editor. Same copy-then-commit approach as the theme editor: the dialog
+   edits a scratch copy of the key table and the result only reaches g_cfg when
+   it returns TRUE.
+   ------------------------------------------------------------------------- */
+
+/* The six keys in dialog order, with the label each row shows. */
+typedef struct {
+    const TCHAR* pLabel;
+    int          iValueId;
+    int          iSetId;
+    int          iIndex;        /* which RSHL_KEYS field this row edits */
+} RSHL_KEYROW;
+
+static RSHL_KEYROW g_aKeyRows[RSHL_KEY_COUNT];
+
+static void InitKeyRows(void) {
+    g_aKeyRows[0].pLabel   = TEXT("Tab");
+    g_aKeyRows[0].iValueId = IDC_KEY_VAL_TAB;
+    g_aKeyRows[0].iSetId   = IDC_KEY_SET_TAB;
+    g_aKeyRows[0].iIndex   = 0;
+
+    g_aKeyRows[1].pLabel   = TEXT("Flip");
+    g_aKeyRows[1].iValueId = IDC_KEY_VAL_FLIP;
+    g_aKeyRows[1].iSetId   = IDC_KEY_SET_FLIP;
+    g_aKeyRows[1].iIndex   = 1;
+
+    g_aKeyRows[2].pLabel   = TEXT("Prev");
+    g_aKeyRows[2].iValueId = IDC_KEY_VAL_PREV;
+    g_aKeyRows[2].iSetId   = IDC_KEY_SET_PREV;
+    g_aKeyRows[2].iIndex   = 2;
+
+    g_aKeyRows[3].pLabel   = TEXT("Next");
+    g_aKeyRows[3].iValueId = IDC_KEY_VAL_NEXT;
+    g_aKeyRows[3].iSetId   = IDC_KEY_SET_NEXT;
+    g_aKeyRows[3].iIndex   = 3;
+
+    g_aKeyRows[4].pLabel   = TEXT("Theme");
+    g_aKeyRows[4].iValueId = IDC_KEY_VAL_THEME;
+    g_aKeyRows[4].iSetId   = IDC_KEY_SET_THEME;
+    g_aKeyRows[4].iIndex   = 4;
+
+    g_aKeyRows[5].pLabel   = TEXT("Action");
+    g_aKeyRows[5].iValueId = IDC_KEY_VAL_ACTION;
+    g_aKeyRows[5].iSetId   = IDC_KEY_SET_ACTION;
+    g_aKeyRows[5].iIndex   = 5;
+}
+
+/* Point pKeys at the six fields in the order the rows expect. */
+static int* KeyField(RSHL_KEYS* pKeys, int iIndex) {
+    switch (iIndex) {
+        case 0:  return &pKeys->iTabSwitch;
+        case 1:  return &pKeys->iFlipScreen;
+        case 2:  return &pKeys->iActionPrev;
+        case 3:  return &pKeys->iActionNext;
+        case 4:  return &pKeys->iThemeSwitch;
+        default: return &pKeys->iAction;
+    }
+}
+
+/* Scratch copy the key dialogs work on. The dialog edits this through a
+   pointer, so the caller can copy it back when the dialog returns TRUE. */
+static RSHL_KEYS* g_pKeyEdit;
+
+/* Fill the six value boxes from *g_pKeyEdit. */
+static void KeyRefreshBoxes(HWND hDlg) {
+    int i;
+
+    if (!g_pKeyEdit) {
+        return;
+    }
+
+    for (i = 0; i < RSHL_KEY_COUNT; ++i) {
+        TCHAR aText[16];
+
+        aText[0] = 0;
+        AppendDec(aText, (int)(sizeof(aText) / sizeof(aText[0])),
+                  *KeyField(g_pKeyEdit, g_aKeyRows[i].iIndex));
+        SetDlgItemText(hDlg, g_aKeyRows[i].iValueId, aText);
+    }
+}
+
+/* ------------------------------------------------------------------ capture */
+
+/* Set while the capture dialog is up: the key the user pressed, or 0. */
+static int    g_iCaptureKey;
+static WNDPROC g_pfnCaptureOld;
+
+/* Draw "Key 37" or "Press any key to assign it." in the capture dialog. */
+static void KeyCaptureShow(HWND hDlg) {
+    TCHAR aText[64];
+
+    aText[0] = 0;
+
+    if (g_iCaptureKey > 0) {
+        AppendText(aText, (int)(sizeof(aText) / sizeof(aText[0])),
+                   TEXT("Key "));
+        AppendDec(aText, (int)(sizeof(aText) / sizeof(aText[0])), g_iCaptureKey);
+    }
+    else {
+        AppendText(aText, (int)(sizeof(aText) / sizeof(aText[0])),
+                   TEXT("Press any key to assign it."));
+    }
+
+    SetDlgItemText(hDlg, IDC_KEYCAP_HINT, aText);
+}
+
+/* Every key press is wanted, including Tab, Enter and Escape, otherwise the
+   dialog manager would use them for navigation and Action could never be set
+   to VK_RETURN. */
+static LRESULT CALLBACK KeyCaptureSink(HWND hWnd, UINT message,
+                                       WPARAM wParam, LPARAM lParam) {
+    switch (message) {
+        case WM_GETDLGCODE:
+            return DLGC_WANTALLKEYS | DLGC_WANTCHARS;
+
+        case WM_KEYDOWN:
+        case WM_SYSKEYDOWN:
+            if ((int)wParam > 0 && (int)wParam <= 255) {
+                g_iCaptureKey = (int)wParam;
+                KeyCaptureShow(GetParent(hWnd));
+            }
+            return 0;
+
+        default:
+            break;
+    }
+
+    return CallWindowProc(g_pfnCaptureOld, hWnd, message, wParam, lParam);
+}
+
+LRESULT CALLBACK KeyCaptureDlgProc(HWND hDlg, UINT message,
+                                   WPARAM wParam, LPARAM lParam) {
+    switch (message) {
+        case WM_INITDIALOG: {
+            /* lParam carries the key currently assigned, so pressing Cancel
+               keeps it. */
+            const int   iCurrent = (int)lParam;
+            const HWND  hHint = GetDlgItem(hDlg, IDC_KEYCAP_HINT);
+
+            g_iCaptureKey = 0;
+            KeyCaptureShow(hDlg);
+
+            CenterDialog(hDlg);
+
+            if (hHint) {
+                g_pfnCaptureOld = (WNDPROC)SetWindowLong(
+                    hHint, GWL_WNDPROC, (LONG)KeyCaptureSink);
+                SetFocus(hHint);
+            }
+
+            (void)iCurrent;
+            return FALSE;
+        }
+
+        case WM_COMMAND:
+            switch (LOWORD(wParam)) {
+                case IDOK:
+                    if (g_iCaptureKey <= 0) {
+                        MessageBox(hDlg,
+                                   TEXT("Press a key first, then choose OK."),
+                                   TEXT("No Key Pressed"),
+                                   MB_OK | MB_ICONWARNING);
+                        return TRUE;
+                    }
+                    EndDialog(hDlg, g_iCaptureKey);
+                    return TRUE;
+
+                case IDCANCEL:
+                    EndDialog(hDlg, 0);
+                    return TRUE;
+
+                default:
+                    break;
+            }
+            break;
+
+        case WM_DESTROY: {
+            const HWND hHint = GetDlgItem(hDlg, IDC_KEYCAP_HINT);
+
+            if (hHint && g_pfnCaptureOld) {
+                SetWindowLong(hHint, GWL_WNDPROC, (LONG)g_pfnCaptureOld);
+                g_pfnCaptureOld = NULL;
+            }
+            break;
+        }
+
+        default:
+            break;
+    }
+
+    return FALSE;
+}
+
+/* Ask the user for one virtual key code. Returns 0 when cancelled. */
+static int KeyCaptureRun(HWND hParent, int iCurrent) {
+    return (int)DialogBoxParam(hInst, (LPCTSTR)IDD_KEYCAPTURE, hParent,
+                               (DLGPROC)KeyCaptureDlgProc, (LPARAM)iCurrent);
+}
+
+/* ------------------------------------------------------------------- dialog */
+
+LRESULT CALLBACK KeyDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
+    switch (message) {
+        case WM_INITDIALOG:
+            g_pKeyEdit = (RSHL_KEYS*)lParam;
+            InitKeyRows();
+            KeyRefreshBoxes(hDlg);
+            CenterDialog(hDlg);
+            return TRUE;
+
+        case WM_COMMAND: {
+            const int iId = LOWORD(wParam);
+            int       i;
+
+            /* A Set button on one of the six rows. */
+            for (i = 0; i < RSHL_KEY_COUNT; ++i) {
+                if (iId == g_aKeyRows[i].iSetId) {
+                    int* pValue = KeyField(g_pKeyEdit, g_aKeyRows[i].iIndex);
+                    const int iKey = KeyCaptureRun(hDlg, *pValue);
+
+                    if (iKey > 0) {
+                        *pValue = iKey;
+                        KeyRefreshBoxes(hDlg);
+                    }
+                    return TRUE;
+                }
+            }
+
+            switch (iId) {
+                case IDOK: {
+                    /* Two rows may not share a key, otherwise the shell cannot
+                       tell which command the user meant. */
+                    for (i = 0; i < RSHL_KEY_COUNT; ++i) {
+                        int j;
+
+                        for (j = i + 1; j < RSHL_KEY_COUNT; ++j) {
+                            const int iLeft  = *KeyField(g_pKeyEdit, i);
+                            const int iRight = *KeyField(g_pKeyEdit, j);
+
+                            if (iLeft == iRight) {
+                                TCHAR aMessage[160];
+
+                                aMessage[0] = 0;
+                                AppendText(aMessage,
+                                           (int)(sizeof(aMessage) / sizeof(aMessage[0])),
+                                           g_aKeyRows[i].pLabel);
+                                AppendText(aMessage,
+                                           (int)(sizeof(aMessage) / sizeof(aMessage[0])),
+                                           TEXT(" and "));
+                                AppendText(aMessage,
+                                           (int)(sizeof(aMessage) / sizeof(aMessage[0])),
+                                           g_aKeyRows[j].pLabel);
+                                AppendText(aMessage,
+                                           (int)(sizeof(aMessage) / sizeof(aMessage[0])),
+                                           TEXT(" use the same key "));
+                                AppendDec(aMessage,
+                                          (int)(sizeof(aMessage) / sizeof(aMessage[0])),
+                                          iLeft);
+                                AppendText(aMessage,
+                                           (int)(sizeof(aMessage) / sizeof(aMessage[0])),
+                                           TEXT("."));
+
+                                MessageBox(hDlg, aMessage,
+                                           TEXT("Duplicate Key"),
+                                           MB_OK | MB_ICONWARNING);
+                                return TRUE;
+                            }
+                        }
+                    }
+
+                    EndDialog(hDlg, TRUE);
+                    return TRUE;
+                }
+
+                case IDCANCEL:
+                    EndDialog(hDlg, FALSE);
+                    return TRUE;
+
+                default:
+                    break;
+            }
+            break;
+        }
+
+        default:
+            break;
+    }
+
+    return FALSE;
+}
+
+/* Open the key editor and copy the result back into g_cfg. */
+static void ShowKeyEditor(HWND hWnd) {
+    RSHL_KEYS scratch = g_cfg.keys;
+
+    if (DialogBoxParam(hInst, (LPCTSTR)IDD_KEYEDIT, hWnd,
+                       (DLGPROC)KeyDlgProc, (LPARAM)&scratch)) {
+        g_cfg.keys = scratch;
+        InvalidateRect(hWnd, NULL, TRUE);
+    }
+}
+
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
     HDC         hdc;
     PAINTSTRUCT ps;
@@ -856,8 +1161,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                    ShowThemeEditor(hWnd);
                    break;
                 case IDM_EDIT_KEY:
+                   ShowKeyEditor(hWnd);
+                   break;
                 case IDM_EDIT_SLOTS:
-                   /* Not written yet: the menu items are disabled in
+                   /* Not written yet: the menu item is disabled in
                       WM_INITMENUPOPUP, so this is only a safety net. */
                    break;
                 case IDM_FILE_EXIT:
@@ -868,13 +1175,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
             }
             break;
         case WM_INITMENUPOPUP:
-            /* Key and Slots editors do not exist yet, so they are always
-               greyed. EnableMenuItem returns -1 for a command the popup does
-               not own, which is what happens for File and Help, so no filtering
-               on the menu handle is needed. GetMenuState is avoided on purpose:
-               the Windows CE headers do not declare it. */
-            EnableMenuItem((HMENU)wParam, IDM_EDIT_KEY,
-                           MF_BYCOMMAND | MF_GRAYED);
+            /* The Slots editor does not exist yet, so it is always greyed.
+               EnableMenuItem returns -1 for a command the popup does not own,
+               which is what happens for File and Help, so no filtering on the
+               menu handle is needed. GetMenuState is avoided on purpose: the
+               Windows CE headers do not declare it. */
             EnableMenuItem((HMENU)wParam, IDM_EDIT_SLOTS,
                            MF_BYCOMMAND | MF_GRAYED);
             break;
