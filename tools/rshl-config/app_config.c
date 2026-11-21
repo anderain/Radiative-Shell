@@ -148,30 +148,41 @@ static void AppendDec(TCHAR* pDst, int cchDst, int iValue) {
 }
 
 /* -------------------------------------------------------------------------
-   Client area layout. The window is a fixed 240x320 on the desktop, so the
-   rows are laid out top down from constants rather than measured.
+   Client area layout. The target is a 320x240 landscape screen, so every row
+   is placed from constants and the whole picture has to fit in 240 pixels of
+   height. The desktop window asks for the same client size, which makes the
+   local build look like the device.
    ------------------------------------------------------------------------- */
 
-#define UI_MARGIN       8
-#define UI_LINE_H       20
-#define UI_SECTION_GAP  10
+#define UI_MARGIN       6
+#define UI_TITLE_H      18
+#define UI_THEME_ROW_H  24
+#define UI_KEY_ROW_H    16
+#define UI_SECTION_GAP  6
 #define UI_SWATCH_W     30
-#define UI_SWATCH_H     18
+#define UI_SWATCH_H     16
 #define UI_SWATCH_GAP   6
-#define UI_SWATCH_X     76
+#define UI_SWATCH_X     56
+#define UI_KEY_VALUE_DX 52
 #define UI_COL2_X       124
-#define UI_THEME_ROW_H  40
 
-/* Draw one line of text top left aligned, selecting pFont for the call. */
+/* DrawText is used instead of TextOut because the Windows CE build this tool
+   also targets does not export TextOut. */
 static void DrawLine(HDC hdc, int iX, int iY, const TCHAR* pText, HFONT hFont) {
+    RECT  rt;
     HFONT hOld;
 
     if (!pText || !*pText) {
         return;
     }
 
+    rt.left   = iX;
+    rt.top    = iY;
+    rt.right  = iX + 1024;
+    rt.bottom = iY + UI_TITLE_H;
+
     hOld = (HFONT)SelectObject(hdc, hFont);
-    TextOut(hdc, iX, iY, pText, (int)_tcslen(pText));
+    DrawText(hdc, pText, -1, &rt, DT_LEFT | DT_TOP | DT_NOPREFIX | DT_SINGLELINE);
     SelectObject(hdc, hOld);
 }
 
@@ -184,7 +195,7 @@ static COLORREF SwatchColor(BYTE bIndex) {
                (BYTE)(color & 0xFF));
 }
 
-/* One theme row: the index, the four swatches and their hex byte values. */
+/* One theme row: the index and the four swatches for that theme. */
 static void DrawThemeRow(HDC hdc, int iY, int iIndex) {
     TCHAR    aLabel[24];
     HPEN     hPen;
@@ -203,12 +214,13 @@ static void DrawThemeRow(HDC hdc, int iY, int iIndex) {
 
     for (j = 0; j < 4; ++j) {
         const int iX = UI_SWATCH_X + j * (UI_SWATCH_W + UI_SWATCH_GAP);
-        HBRUSH hBrush = CreateSolidBrush(SwatchColor(g_cfg.aThemes[iIndex].bColors[j]));
+        const int iTop = iY + (UI_THEME_ROW_H - UI_SWATCH_H) / 2;
+        HBRUSH    hBrush = CreateSolidBrush(SwatchColor(g_cfg.aThemes[iIndex].bColors[j]));
 
         if (hBrush) {
             HBRUSH hOldBrush = (HBRUSH)SelectObject(hdc, hBrush);
 
-            Rectangle(hdc, iX, iY, iX + UI_SWATCH_W, iY + UI_SWATCH_H);
+            Rectangle(hdc, iX, iTop, iX + UI_SWATCH_W, iTop + UI_SWATCH_H);
 
             SelectObject(hdc, hOldBrush);
             DeleteObject(hBrush);
@@ -218,20 +230,6 @@ static void DrawThemeRow(HDC hdc, int iY, int iIndex) {
     SelectObject(hdc, hOldPen);
     if (hPen) {
         DeleteObject(hPen);
-    }
-
-    /* The four palette indexes, spaced to sit under their swatches. */
-    for (j = 0; j < 4; ++j) {
-        static const TCHAR kHex[] = TEXT("0123456789ABCDEF");
-        const BYTE  bValue = g_cfg.aThemes[iIndex].bColors[j];
-        TCHAR       aHex[4];
-
-        aHex[0] = kHex[(bValue >> 4) & 0x0F];
-        aHex[1] = kHex[bValue & 0x0F];
-        aHex[2] = 0;
-
-        DrawLine(hdc, UI_SWATCH_X + j * (UI_SWATCH_W + UI_SWATCH_GAP) + 3,
-                 iY + UI_SWATCH_H + 2, aHex, g_hFont);
     }
 }
 
@@ -243,20 +241,24 @@ static void DrawKeyCell(HDC hdc, int iX, int iY, const TCHAR* pLabel, int iKey) 
 
     aValue[0] = 0;
     AppendDec(aValue, (int)(sizeof(aValue) / sizeof(aValue[0])), iKey);
-    DrawLine(hdc, iX + 52, iY, aValue, g_hFont);
+    DrawLine(hdc, iX + UI_KEY_VALUE_DX, iY, aValue, g_hFont);
 }
 
-/* Width of pText in the UI font. */
+/* Width of pText in the UI font, measured with the same call that draws it. */
 static int TextWidth(HDC hdc, const TCHAR* pText) {
-    SIZE  size;
-    HFONT hOld = (HFONT)SelectObject(hdc, g_hFont);
+    RECT  rt;
+    HFONT hOld;
 
-    size.cx = 0;
-    size.cy = 0;
-    GetTextExtentPoint32(hdc, pText, (int)_tcslen(pText), &size);
+    rt.left   = 0;
+    rt.top    = 0;
+    rt.right  = 0;
+    rt.bottom = 0;
+
+    hOld = (HFONT)SelectObject(hdc, g_hFont);
+    DrawText(hdc, pText, -1, &rt, DT_CALCRECT | DT_SINGLELINE | DT_NOPREFIX);
     SelectObject(hdc, hOld);
 
-    return size.cx;
+    return rt.right - rt.left;
 }
 
 /* The current file name along the bottom edge. A path that is too wide is
@@ -478,14 +480,15 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
         dwStyle = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
 
-        /* Ask for a fixed 240x320 client area; AdjustWindowRect adds the
-           frame. bMenu is TRUE because the class attaches IDM_MENU and the
-           menu bar sits in the non client area, so it has to be reserved or
-           it silently takes its height out of the client. */
+        /* Ask for the target screen's client area, 320x240 landscape;
+           AdjustWindowRect adds the frame. bMenu is TRUE because the class
+           attaches IDM_MENU and the menu bar sits in the non client area, so
+           it has to be reserved or it silently takes its height out of the
+           client. */
         rectWindow.left   = 0;
         rectWindow.top    = 0;
-        rectWindow.right  = 240;
-        rectWindow.bottom = 320;
+        rectWindow.right  = 320;
+        rectWindow.bottom = 240;
         AdjustWindowRect(&rectWindow, dwStyle, TRUE);
 
         iWinWidth  = rectWindow.right - rectWindow.left;
@@ -559,7 +562,7 @@ static void PaintClient(HDC hdc, const RECT* pRect) {
 
     /* Theme section. */
     DrawLine(hdc, UI_MARGIN, iY, TEXT("Theme"), g_hFontBold);
-    iY += UI_LINE_H;
+    iY += UI_TITLE_H;
 
     for (i = 0; i < RSHL_THEME_COUNT; ++i) {
         DrawThemeRow(hdc, iY, i);
@@ -569,19 +572,19 @@ static void PaintClient(HDC hdc, const RECT* pRect) {
     /* Keys section, two columns of three. */
     iY += UI_SECTION_GAP;
     DrawLine(hdc, UI_MARGIN, iY, TEXT("Keys"), g_hFontBold);
-    iY += UI_LINE_H;
+    iY += UI_TITLE_H;
 
     DrawKeyCell(hdc, UI_MARGIN, iY, TEXT("Tab"),    g_cfg.keys.iTabSwitch);
     DrawKeyCell(hdc, UI_COL2_X, iY, TEXT("Next"),   g_cfg.keys.iActionNext);
-    iY += UI_LINE_H;
+    iY += UI_KEY_ROW_H;
 
     DrawKeyCell(hdc, UI_MARGIN, iY, TEXT("Flip"),   g_cfg.keys.iFlipScreen);
     DrawKeyCell(hdc, UI_COL2_X, iY, TEXT("Theme"),  g_cfg.keys.iThemeSwitch);
-    iY += UI_LINE_H;
+    iY += UI_KEY_ROW_H;
 
     DrawKeyCell(hdc, UI_MARGIN, iY, TEXT("Prev"),   g_cfg.keys.iActionPrev);
     DrawKeyCell(hdc, UI_COL2_X, iY, TEXT("Action"), g_cfg.keys.iAction);
-    iY += UI_LINE_H;
+    iY += UI_KEY_ROW_H;
 
     /* Slot count. */
     iY += UI_SECTION_GAP;
@@ -631,9 +634,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
             GetClientRect(hWnd, &rt);
             PaintClient(hdc, &rt);
 
-            /* The current file name sits on the bottom edge, in its own
-               column so it stays put when the rows above are reflowed. */
-            DrawPathLine(hdc, UI_MARGIN, rt.bottom - UI_MARGIN - 16,
+            /* The current file name rides on the bottom edge, so it stays put
+               whatever the rows above do. */
+            DrawPathLine(hdc, UI_MARGIN, rt.bottom - UI_MARGIN - UI_TITLE_H,
                          rt.right - 2 * UI_MARGIN);
             EndPaint(hWnd, &ps);
             break;
