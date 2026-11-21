@@ -223,6 +223,44 @@ static BOOL ParseHexByte(const TCHAR* pText, BYTE* pbValue) {
     return TRUE;
 }
 
+/* Decimal virtual key code, 1..255. Leading and trailing blanks are allowed,
+   anything else is rejected. */
+static BOOL ParseKeyCode(const TCHAR* pText, int* piKey) {
+    int iValue = 0;
+    int iDigits = 0;
+
+    if (!pText || !piKey) {
+        return FALSE;
+    }
+
+    while (*pText == TEXT(' ') || *pText == TEXT('\t')) {
+        ++pText;
+    }
+
+    while (*pText) {
+        const TCHAR c = *pText;
+
+        if (c < TEXT('0') || c > TEXT('9')) {
+            return FALSE;
+        }
+
+        iValue = iValue * 10 + (int)(c - TEXT('0'));
+        if (iValue > 255) {
+            return FALSE;
+        }
+
+        ++iDigits;
+        ++pText;
+    }
+
+    if (iDigits == 0 || iValue < 1) {
+        return FALSE;
+    }
+
+    *piKey = iValue;
+    return TRUE;
+}
+
 /* Center a dialog over its owner. The same calls the About box has always
    used, kept deliberately: GetDesktopWindow and friends are not declared by
    the Windows CE headers this tool also targets. */
@@ -901,7 +939,7 @@ static int* KeyField(RSHL_KEYS* pKeys, int iIndex) {
    pointer, so the caller can copy it back when the dialog returns TRUE. */
 static RSHL_KEYS* g_pKeyEdit;
 
-/* Fill the six value boxes from *g_pKeyEdit. */
+/* Put *g_pKeyEdit back into the six boxes. */
 static void KeyRefreshBoxes(HWND hDlg) {
     int i;
 
@@ -917,6 +955,39 @@ static void KeyRefreshBoxes(HWND hDlg) {
                   *KeyField(g_pKeyEdit, g_aKeyRows[i].iIndex));
         SetDlgItemText(hDlg, g_aKeyRows[i].iValueId, aText);
     }
+}
+
+/* Read the six boxes into *g_pKeyEdit. Returns the first box that does not
+   hold a valid key code, or NULL when all six are fine. Nothing is written
+   back until every box has parsed, so a half typed value cannot leave the
+   table in a state that was never shown. */
+static HWND KeyReadBoxes(HWND hDlg) {
+    int i;
+
+    if (!g_pKeyEdit) {
+        return NULL;
+    }
+
+    for (i = 0; i < RSHL_KEY_COUNT; ++i) {
+        const HWND hEdit = GetDlgItem(hDlg, g_aKeyRows[i].iValueId);
+        TCHAR      aText[16];
+        int        iKey = 0;
+
+        if (!hEdit) {
+            continue;
+        }
+
+        aText[0] = 0;
+        GetWindowText(hEdit, aText, (int)(sizeof(aText) / sizeof(aText[0])));
+
+        if (!ParseKeyCode(aText, &iKey)) {
+            return hEdit;
+        }
+
+        *KeyField(g_pKeyEdit, g_aKeyRows[i].iIndex) = iKey;
+    }
+
+    return NULL;
 }
 
 /* ------------------------------------------------------------------ capture */
@@ -972,10 +1043,9 @@ LRESULT CALLBACK KeyCaptureDlgProc(HWND hDlg, UINT message,
                                    WPARAM wParam, LPARAM lParam) {
     switch (message) {
         case WM_INITDIALOG: {
-            /* lParam carries the key currently assigned, so pressing Cancel
-               keeps it. */
-            const int   iCurrent = (int)lParam;
-            const HWND  hHint = GetDlgItem(hDlg, IDC_KEYCAP_HINT);
+            const HWND hHint = GetDlgItem(hDlg, IDC_KEYCAP_HINT);
+
+            (void)lParam;
 
             g_iCaptureKey = 0;
             KeyCaptureShow(hDlg);
@@ -988,7 +1058,6 @@ LRESULT CALLBACK KeyCaptureDlgProc(HWND hDlg, UINT message,
                 SetFocus(hHint);
             }
 
-            (void)iCurrent;
             return FALSE;
         }
 
@@ -1041,12 +1110,26 @@ static int KeyCaptureRun(HWND hParent, int iCurrent) {
 
 LRESULT CALLBACK KeyDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
     switch (message) {
-        case WM_INITDIALOG:
+        case WM_INITDIALOG: {
+            int i;
+
             g_pKeyEdit = (RSHL_KEYS*)lParam;
             InitKeyRows();
             KeyRefreshBoxes(hDlg);
+
+            /* Three characters is enough for 255; the boxes are typed into
+               as well as filled by the capture dialog. */
+            for (i = 0; i < RSHL_KEY_COUNT; ++i) {
+                const HWND hEdit = GetDlgItem(hDlg, g_aKeyRows[i].iValueId);
+
+                if (hEdit) {
+                    SendMessage(hEdit, EM_LIMITTEXT, 3, 0);
+                }
+            }
+
             CenterDialog(hDlg);
             return TRUE;
+        }
 
         case WM_COMMAND: {
             const int iId = LOWORD(wParam);
@@ -1055,11 +1138,11 @@ LRESULT CALLBACK KeyDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lPara
             /* A Set button on one of the six rows. */
             for (i = 0; i < RSHL_KEY_COUNT; ++i) {
                 if (iId == g_aKeyRows[i].iSetId) {
-                    int* pValue = KeyField(g_pKeyEdit, g_aKeyRows[i].iIndex);
-                    const int iKey = KeyCaptureRun(hDlg, *pValue);
+                    const int iKey =
+                        KeyCaptureRun(hDlg, 0);
 
                     if (iKey > 0) {
-                        *pValue = iKey;
+                        *KeyField(g_pKeyEdit, g_aKeyRows[i].iIndex) = iKey;
                         KeyRefreshBoxes(hDlg);
                     }
                     return TRUE;
@@ -1068,6 +1151,20 @@ LRESULT CALLBACK KeyDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lPara
 
             switch (iId) {
                 case IDOK: {
+                    HWND hBad = KeyReadBoxes(hDlg);
+
+                    /* The boxes can be typed into, so they have to be parsed
+                       before the conflict check means anything. */
+                    if (hBad) {
+                        MessageBox(hDlg,
+                                   TEXT("Enter a key code between 1 and 255."),
+                                   TEXT("Invalid Key"),
+                                   MB_OK | MB_ICONWARNING);
+                        SetFocus(hBad);
+                        SendMessage(hBad, EM_SETSEL, 0, -1);
+                        return TRUE;
+                    }
+
                     /* Two rows may not share a key, otherwise the shell cannot
                        tell which command the user meant. */
                     for (i = 0; i < RSHL_KEY_COUNT; ++i) {
