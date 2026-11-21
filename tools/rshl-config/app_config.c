@@ -15,6 +15,7 @@ static RSHL_CONFIG  g_cfg;
 static char         g_szPath[CFG_PATH_TEXT];
 static HFONT        g_hFont;
 static HFONT        g_hFontBold;
+static int          g_iCbHeight = 0; /* Commandbar height, only for CE */
 
 ATOM                MyRegisterClass	(HINSTANCE hInstance, LPTSTR szWindowClass);
 BOOL                InitInstance	(HINSTANCE, int);
@@ -154,9 +155,9 @@ static void AppendDec(TCHAR* pDst, int cchDst, int iValue) {
    local build look like the device.
    ------------------------------------------------------------------------- */
 
-#define UI_MARGIN       6
+#define UI_MARGIN       4
 #define UI_TITLE_H      18
-#define UI_THEME_ROW_H  24
+#define UI_THEME_ROW_H  20
 #define UI_KEY_ROW_H    16
 #define UI_SECTION_GAP  6
 #define UI_SWATCH_W     30
@@ -558,7 +559,7 @@ static void PaintClient(HDC hdc, const RECT* pRect) {
     SetBkMode(hdc, TRANSPARENT);
     SetTextColor(hdc, RGB(0, 0, 0));
 
-    iY = UI_MARGIN;
+    iY = UI_MARGIN + g_iCbHeight;
 
     /* Theme section. */
     DrawLine(hdc, UI_MARGIN, iY, TEXT("Theme"), g_hFontBold);
@@ -627,6 +628,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
             hwndCB = CommandBar_Create(hInst, hWnd, 1);
             CommandBar_InsertMenubar(hwndCB, hInst, IDM_MENU, 0);
             CommandBar_AddAdornments(hwndCB, 0, 0);
+            /* Get height of command bar */
+            {
+                RECT rcBar;
+                hwndCB = CommandBar_Create(hInst, hWnd, 1);
+                CommandBar_InsertMenubar(hwndCB, hInst, IDM_MENU, 0);
+                CommandBar_AddAdornments(hwndCB, 0, 0);
+                GetWindowRect(hwndCB, &rcBar);
+                g_iCbHeight = rcBar.bottom - rcBar.top;
+            }
+#else
+            g_iCbHeight = 0;
 #endif
             break;
         case WM_PAINT:
