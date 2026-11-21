@@ -21,6 +21,7 @@ ATOM                MyRegisterClass	(HINSTANCE hInstance, LPTSTR szWindowClass);
 BOOL                InitInstance	(HINSTANCE, int);
 LRESULT CALLBACK    WndProc			(HWND, UINT, WPARAM, LPARAM);
 LRESULT CALLBACK    About			(HWND, UINT, WPARAM, LPARAM);
+LRESULT CALLBACK    ThemeDlgProc	(HWND, UINT, WPARAM, LPARAM);
 
 /* -------------------------------------------------------------------------
    Text helpers. config.c speaks ANSI, the window speaks TCHAR, so the two
@@ -146,6 +147,113 @@ static void AppendDec(TCHAR* pDst, int cchDst, int iValue) {
         aOne[0] = aText[--iCount];
         AppendText(pDst, cchDst, aOne);
     }
+}
+
+/* Two upper case hexadecimal digits, the shape the cfg file uses. */
+static void FormatHexByte(TCHAR* pDst, int cchDst, BYTE bValue) {
+    static const TCHAR kHex[] = TEXT("0123456789ABCDEF");
+    TCHAR aText[3];
+
+    if (!pDst || cchDst < 3) {
+        return;
+    }
+
+    aText[0] = kHex[(bValue >> 4) & 0x0F];
+    aText[1] = kHex[bValue & 0x0F];
+    aText[2] = 0;
+
+    CopyText(pDst, cchDst, aText);
+}
+
+/* One or two hexadecimal digits, with or without a 0x prefix. Rejects
+   anything else, including a value that does not fit in a byte. */
+static BOOL ParseHexByte(const TCHAR* pText, BYTE* pbValue) {
+    int iValue = 0;
+    int iDigits = 0;
+
+    if (!pText || !pbValue) {
+        return FALSE;
+    }
+
+    while (*pText == TEXT(' ') || *pText == TEXT('\t')) {
+        ++pText;
+    }
+
+    if (pText[0] == TEXT('0') && (pText[1] == TEXT('x') || pText[1] == TEXT('X'))) {
+        pText += 2;
+    }
+
+    while (*pText) {
+        const TCHAR c = *pText;
+        int iDigit;
+
+        if (c >= TEXT('0') && c <= TEXT('9')) {
+            iDigit = (int)(c - TEXT('0'));
+        }
+        else if (c >= TEXT('a') && c <= TEXT('f')) {
+            iDigit = (int)(c - TEXT('a')) + 10;
+        }
+        else if (c >= TEXT('A') && c <= TEXT('F')) {
+            iDigit = (int)(c - TEXT('A')) + 10;
+        }
+        else if (c == TEXT(' ') || c == TEXT('\t')) {
+            ++pText;
+            continue;
+        }
+        else {
+            return FALSE;
+        }
+
+        iValue = iValue * 16 + iDigit;
+        if (iValue > 0xFF) {
+            return FALSE;
+        }
+
+        ++iDigits;
+        ++pText;
+    }
+
+    if (iDigits == 0) {
+        return FALSE;
+    }
+
+    *pbValue = (BYTE)iValue;
+    return TRUE;
+}
+
+/* Center a dialog over its owner. Every dialog calls this from
+   WM_INITDIALOG, so the placement rule lives in one place. */
+static void CenterDialog(HWND hDlg) {
+    RECT rectDialog;
+    RECT rectOwner;
+    int  iX;
+    int  iY;
+
+    if (!GetWindowRect(hDlg, &rectDialog)) {
+        return;
+    }
+
+    /* Owner is the parent window; fall back to the desktop when there is
+       none, so the dialog still lands somewhere sensible. */
+    if (!GetWindowRect(GetParent(hDlg), &rectOwner)) {
+        GetWindowRect(GetDesktopWindow(), &rectOwner);
+    }
+
+    iX = rectOwner.left
+         + ((rectOwner.right - rectOwner.left)
+            - (rectDialog.right - rectDialog.left)) / 2;
+    iY = rectOwner.top
+         + ((rectOwner.bottom - rectOwner.top)
+            - (rectDialog.bottom - rectDialog.top)) / 2;
+
+    if (iX < 0) {
+        iX = 0;
+    }
+    if (iY < 0) {
+        iY = 0;
+    }
+
+    SetWindowPos(hDlg, NULL, iX, iY, 0, 0, SWP_NOZORDER | SWP_NOSIZE);
 }
 
 /* -------------------------------------------------------------------------
@@ -597,6 +705,149 @@ static void PaintClient(HDC hdc, const RECT* pRect) {
     DrawLine(hdc, UI_MARGIN, iY, aText, g_hFont);
 }
 
+/* -------------------------------------------------------------------------
+   Theme editor. The dialog works on a copy of the theme table, so Cancel
+   leaves the live configuration untouched; initialise costs nothing and the
+   caller only copies the table back when the dialog returns TRUE.
+   ------------------------------------------------------------------------- */
+
+/* Control ID of the n-th theme byte. The resource file lays the boxes out in
+   reading order, which this mirrors. */
+static int ThemeEditId(int iTheme, int iByte) {
+    return IDC_THEME_0_0 + iTheme * 4 + iByte;
+}
+
+/* Dialog state, needed because the controls are addressed by ID only. */
+static RSHL_CONFIG* g_pThemeEdit;
+
+/* Read and validate all twelve boxes. Returns the first failing control, or
+   NULL when every box holds a valid byte. */
+static HWND ThemeReadControls(HWND hDlg) {
+    int iTheme;
+
+    for (iTheme = 0; iTheme < RSHL_THEME_COUNT; ++iTheme) {
+        int iByte;
+
+        for (iByte = 0; iByte < 4; ++iByte) {
+            const HWND  hEdit = GetDlgItem(hDlg, ThemeEditId(iTheme, iByte));
+            TCHAR       aText[16];
+            BYTE        bValue = 0;
+
+            if (!hEdit) {
+                continue;
+            }
+
+            aText[0] = 0;
+            GetWindowText(hEdit, aText, (int)(sizeof(aText) / sizeof(aText[0])));
+
+            if (!ParseHexByte(aText, &bValue)) {
+                return hEdit;
+            }
+
+            g_pThemeEdit->aThemes[iTheme].bColors[iByte] = bValue;
+        }
+    }
+
+    return NULL;
+}
+
+LRESULT CALLBACK ThemeDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
+    switch (message) {
+        case WM_INITDIALOG: {
+            int iTheme;
+
+            g_pThemeEdit = (RSHL_CONFIG*)lParam;
+
+            /* Never NULL: the caller always passes its scratch copy. */
+            if (!g_pThemeEdit) {
+                EndDialog(hDlg, FALSE);
+                return TRUE;
+            }
+
+            for (iTheme = 0; iTheme < RSHL_THEME_COUNT; ++iTheme) {
+                int iByte;
+
+                for (iByte = 0; iByte < 4; ++iByte) {
+                    const HWND hEdit = GetDlgItem(hDlg, ThemeEditId(iTheme, iByte));
+                    TCHAR      aText[8];
+
+                    if (!hEdit) {
+                        continue;
+                    }
+
+                    FormatHexByte(aText, (int)(sizeof(aText) / sizeof(aText[0])),
+                                  g_pThemeEdit->aThemes[iTheme].bColors[iByte]);
+
+                    SetWindowText(hEdit, aText);
+                    /* Two characters: one byte in hexadecimal, nothing else
+                       fits the field. */
+                    SendMessage(hEdit, EM_LIMITTEXT, 2, 0);
+                    SendMessage(hEdit, EM_SETSEL, 0, -1);
+                }
+            }
+
+            /* Focus the first box so typing starts where the eye does. */
+            SetFocus(GetDlgItem(hDlg, ThemeEditId(0, 0)));
+
+            CenterDialog(hDlg);
+            return FALSE;               /* focus already set explicitly */
+        }
+
+        case WM_COMMAND:
+            switch (LOWORD(wParam)) {
+                case IDOK: {
+                    HWND hBad = ThemeReadControls(hDlg);
+
+                    if (hBad) {
+                        TCHAR aMessage[128];
+
+                        aMessage[0] = 0;
+                        AppendText(aMessage,
+                                   (int)(sizeof(aMessage) / sizeof(aMessage[0])),
+                                   TEXT("Enter a hexadecimal byte (00 to FF)."));
+                        MessageBox(hDlg, aMessage, TEXT("Invalid Value"),
+                                   MB_OK | MB_ICONWARNING);
+                        SetFocus(hBad);
+                        SendMessage(hBad, EM_SETSEL, 0, -1);
+                        return TRUE;    /* keep the dialog open */
+                    }
+
+                    EndDialog(hDlg, TRUE);
+                    return TRUE;
+                }
+
+                case IDCANCEL:
+                    EndDialog(hDlg, FALSE);
+                    return TRUE;
+
+                default:
+                    break;
+            }
+            break;
+
+        default:
+            break;
+    }
+
+    return FALSE;
+}
+
+/* Open the theme editor and copy the result back into g_cfg. */
+static void ShowThemeEditor(HWND hWnd) {
+    RSHL_CONFIG scratch = g_cfg;
+
+    if (DialogBoxParam(hInst, (LPCTSTR)IDD_THEMEEDIT, hWnd,
+                       (DLGPROC)ThemeDlgProc, (LPARAM)&scratch)) {
+        int i;
+
+        for (i = 0; i < RSHL_THEME_COUNT; ++i) {
+            g_cfg.aThemes[i] = scratch.aThemes[i];
+        }
+
+        InvalidateRect(hWnd, NULL, TRUE);
+    }
+}
+
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
     HDC         hdc;
     PAINTSTRUCT ps;
@@ -614,11 +865,33 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                 case IDM_HELP_ABOUT:
                    DialogBox(hInst, (LPCTSTR)IDD_ABOUTBOX, hWnd, (DLGPROC)About);
                    break;
+                case IDM_EDIT_THEME:
+                   ShowThemeEditor(hWnd);
+                   break;
+                case IDM_EDIT_KEY:
+                case IDM_EDIT_SLOTS:
+                   /* Not written yet: the menu items are disabled in
+                      WM_INITMENUPOPUP, so this is only a safety net. */
+                   break;
                 case IDM_FILE_EXIT:
                    DestroyWindow(hWnd);
                    break;
                 default:
                    return DefWindowProc(hWnd, message, wParam, lParam);
+            }
+            break;
+        case WM_INITMENUPOPUP:
+            /* Key and Slots editors do not exist yet; grey them instead of
+               letting a click do nothing at all. The popup is identified by
+               the presence of the Theme command rather than by its index,
+               because Windows CE builds the menu inside a CommandBar and the
+               index can differ there. */
+            if (GetMenuState((HMENU)wParam, IDM_EDIT_THEME, MF_BYCOMMAND)
+                != (UINT)-1) {
+                EnableMenuItem((HMENU)wParam, IDM_EDIT_KEY,
+                               MF_BYCOMMAND | MF_GRAYED);
+                EnableMenuItem((HMENU)wParam, IDM_EDIT_SLOTS,
+                               MF_BYCOMMAND | MF_GRAYED);
             }
             break;
         case WM_CREATE:
@@ -628,12 +901,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
             hwndCB = CommandBar_Create(hInst, hWnd, 1);
             CommandBar_InsertMenubar(hwndCB, hInst, IDM_MENU, 0);
             CommandBar_AddAdornments(hwndCB, 0, 0);
-            /* Get height of command bar */
+            /* The CommandBar is a child of a full screen window, but it still
+               covers the top of the client area, so its height is subtracted
+               from the layout origin when the rows are drawn. */
             {
                 RECT rcBar;
-                hwndCB = CommandBar_Create(hInst, hWnd, 1);
-                CommandBar_InsertMenubar(hwndCB, hInst, IDM_MENU, 0);
-                CommandBar_AddAdornments(hwndCB, 0, 0);
+
                 GetWindowRect(hwndCB, &rcBar);
                 g_iCbHeight = rcBar.bottom - rcBar.top;
             }
@@ -673,26 +946,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 }
 
 LRESULT CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
-    RECT rt, rt1;
-    int DlgWidth, DlgHeight; 
-    int NewPosX, NewPosY;
-
     (void)lParam;
 
     switch (message) {
         case WM_INITDIALOG:
-            if (GetWindowRect(hDlg, &rt1)) {
-                GetClientRect(GetParent(hDlg), &rt);
-                DlgWidth    = rt1.right - rt1.left;
-                DlgHeight   = rt1.bottom - rt1.top ;
-                NewPosX     = (rt.right - rt.left - DlgWidth)/2;
-                NewPosY     = (rt.bottom - rt.top - DlgHeight)/2;
-                
-                if (NewPosX < 0) NewPosX = 0;
-                if (NewPosY < 0) NewPosY = 0;
-                SetWindowPos(hDlg, 0, NewPosX, NewPosY,
-                    0, 0, SWP_NOZORDER | SWP_NOSIZE);
-            }
+            CenterDialog(hDlg);
             return TRUE;
 
         case WM_COMMAND:

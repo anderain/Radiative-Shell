@@ -70,6 +70,12 @@ BEGIN
         MENUITEM SEPARATOR
         MENUITEM "E&xit",                       IDM_FILE_EXIT
     END
+    POPUP "&Edit"
+    BEGIN
+        MENUITEM "&Theme...\tCtrl+1",           IDM_EDIT_THEME
+        MENUITEM "&Key...\tCtrl+2",             IDM_EDIT_KEY
+        MENUITEM "&Slots...\tCtrl+3",           IDM_EDIT_SLOTS
+    END
     POPUP "&Help"
     BEGIN
         MENUITEM "&About",                      IDM_HELP_ABOUT
@@ -93,6 +99,33 @@ BEGIN
     CTEXT           "Copyright (C) 2026",IDC_STATIC,0,46,93,8
 END
 
+IDD_THEMEEDIT DIALOG DISCARDABLE  0, 0, 186, 86
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Theme Editor"
+FONT 8, "Tahoma"
+BEGIN
+    LTEXT           "Theme 1",IDC_STATIC,7,12,34,9
+    EDITTEXT        IDC_THEME_0_0,44,9,30,13,ES_AUTOHSCROLL
+    EDITTEXT        IDC_THEME_0_1,78,9,30,13,ES_AUTOHSCROLL
+    EDITTEXT        IDC_THEME_0_2,112,9,30,13,ES_AUTOHSCROLL
+    EDITTEXT        IDC_THEME_0_3,146,9,30,13,ES_AUTOHSCROLL
+
+    LTEXT           "Theme 2",IDC_STATIC,7,32,34,9
+    EDITTEXT        IDC_THEME_1_0,44,29,30,13,ES_AUTOHSCROLL
+    EDITTEXT        IDC_THEME_1_1,78,29,30,13,ES_AUTOHSCROLL
+    EDITTEXT        IDC_THEME_1_2,112,29,30,13,ES_AUTOHSCROLL
+    EDITTEXT        IDC_THEME_1_3,146,29,30,13,ES_AUTOHSCROLL
+
+    LTEXT           "Theme 3",IDC_STATIC,7,52,34,9
+    EDITTEXT        IDC_THEME_2_0,44,49,30,13,ES_AUTOHSCROLL
+    EDITTEXT        IDC_THEME_2_1,78,49,30,13,ES_AUTOHSCROLL
+    EDITTEXT        IDC_THEME_2_2,112,49,30,13,ES_AUTOHSCROLL
+    EDITTEXT        IDC_THEME_2_3,146,49,30,13,ES_AUTOHSCROLL
+
+    DEFPUSHBUTTON   "OK",IDOK,72,66,48,14
+    PUSHBUTTON      "Cancel",IDCANCEL,126,66,48,14
+END
+
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -104,6 +137,9 @@ BEGIN
     "O",            IDM_FILE_OPEN,          ASCII,  ALT, NOINVERT
     "S",            IDM_FILE_SAVEAS,        ASCII,  ALT, NOINVERT
     "/",            IDM_HELP_ABOUT,         ASCII,  ALT, NOINVERT
+    "^1",           IDM_EDIT_THEME,         ASCII,  NOINVERT
+    "^2",           IDM_EDIT_KEY,           ASCII,  NOINVERT
+    "^3",           IDM_EDIT_SLOTS,         ASCII,  NOINVERT
     VK_F4,          IDM_FILE_EXIT,          VIRTKEY, ALT, NOINVERT
 END
 
