@@ -37,6 +37,22 @@ static const unsigned char* const g_pbWalkFrames[PB_WALK_FRAME_COUNT] = {
     IMAGE_WALK_BOY_F5
 };
 
+/* Launcher icons by RSHL_TYPE_* number. The declaration order in assets.h is
+   not the type order, so this table has to spell the mapping out: type 4 is
+   Internet and type 5 is Multimedia. */
+static const unsigned char* const g_pbSlotIcons[10] = {
+    ICON_DEV,       /* 0 Development */
+    ICON_EDU,       /* 1 Education   */
+    ICON_GAME,      /* 2 Games       */
+    ICON_GRAPH,     /* 3 Graphics    */
+    ICON_INTERNET,  /* 4 Internet    */
+    ICON_MEDIA,     /* 5 Multimedia  */
+    ICON_OFFICE,    /* 6 Office      */
+    ICON_SCIENCE,   /* 7 Science     */
+    ICON_SETTING,   /* 8 System      */
+    ICON_UTILS      /* 9 Utilities   */
+};
+
 /* Seven segment bit masks, bit 0 = a (top) through bit 6 = g (middle):
      --a--
     f     b
@@ -871,10 +887,171 @@ static void PbDrawSystemPage(RSGRAPH* pRsGraph, const SYSTEM_INFO* pSysInfo,
     }
 }
 
+/* -------------------------------------------------------------------------
+   Launcher page.
+
+   A scrolling list of the configured slots. Each row is an icon on the left
+   and two lines of text on the right: the display name at double size and the
+   program path at normal size. The selected row is inverted for the full
+   row width, with a solid bar down its left edge so the selection reads even
+   when the row happens to be mostly dark.
+   ------------------------------------------------------------------------- */
+
+/* Copy an ANSI string from the config into a byte buffer the graph layer can
+   draw. Slots are stored narrow, the shell draws narrow, so this is a plain
+   copy with truncation. */
+static void PbCopyNarrow(const char* pSrc, unsigned char* pDst, int cbDst) {
+    int i;
+
+    if (!pDst || cbDst <= 0) {
+        return;
+    }
+
+    for (i = 0; pSrc && pSrc[i] && i < cbDst - 1; ++i) {
+        pDst[i] = (unsigned char)pSrc[i];
+    }
+    pDst[i] = 0;
+}
+
+/* Index of the first visible row for a given selection. Keeps the selection in
+   view without scrolling until it has to. */
+static int PbSlotTop(int iSel, int iCount) {
+    int iTop;
+
+    if (iCount <= PB_SLOT_VISIBLE) {
+        return 0;
+    }
+
+    iTop = iSel - (PB_SLOT_VISIBLE - 1);
+    if (iTop > iCount - PB_SLOT_VISIBLE) {
+        iTop = iCount - PB_SLOT_VISIBLE;
+    }
+    if (iTop < 0) {
+        iTop = 0;
+    }
+
+    return iTop;
+}
+
+/* One launcher row. iY is the top of the 30 pixel band. */
+static void PbDrawSlotRow(RSGRAPH* pRsGraph, const RSHL_SLOT* pSlot,
+                          int iTop, int iLeft, int iRight, BOOL bSelected) {
+    unsigned char aName[RSHL_NAME_MAX];
+    unsigned char aPath[RSHL_PATH_MAX];
+    const BYTE    bFG   = bSelected ? RS_GRAY_BLACK : RS_GRAY_LIGHT;
+    const BYTE    bName = bSelected ? RS_GRAY_BLACK : RS_GRAY_WHITE;
+    const int     iW    = iRight - iLeft + 1;
+    const int     iTextX = iLeft + PB_SLOT_TEXT_X;
+    const int     iNameY = iTop + 4;
+    const int     iPathY = iTop + 4 + RS_FONT_HEIGHT * PB_SLOT_NAME_SCALE + 1;
+    const unsigned char* pIcon = NULL;
+
+    if (bSelected) {
+        RsGraphFillRect(pRsGraph, iLeft, iTop, iW, PB_SLOT_ROW_H, RS_GRAY_WHITE);
+        RsGraphFillRect(pRsGraph, iLeft, iTop, PB_SLOT_SEL_BAR_W,
+                        PB_SLOT_ROW_H, RS_GRAY_BLACK);
+    }
+
+    if (pSlot->iType >= 0 && pSlot->iType <= RSHL_TYPE_UTILITIES) {
+        pIcon = g_pbSlotIcons[pSlot->iType];
+    }
+
+    if (pIcon) {
+        RsGraphDrawImage(pRsGraph, iLeft + (PB_SLOT_TEXT_X - PB_SLOT_ICON_W) / 2 + 2,
+                         iTop + (PB_SLOT_ROW_H - PB_SLOT_ICON_H) / 2,
+                         pIcon, bFG);
+    }
+
+    PbCopyNarrow(pSlot->szName, aName, (int)sizeof(aName));
+    PbCopyNarrow(pSlot->szPath, aPath, (int)sizeof(aPath));
+
+    RsGraphDrawTextScaled(pRsGraph, iTextX, iNameY, aName, bName,
+                          PB_SLOT_NAME_SCALE);
+    RsGraphDrawText(pRsGraph, iTextX, iPathY, aPath, bFG);
+}
+
+static void PbDrawLauncherPage(RSGRAPH* pRsGraph, const RSHL_CONFIG* pConfig,
+                               int iSel, int iTop, int iBottom,
+                               int iLeft, int iRight) {
+    int iCount;
+    int iFirst;
+    int i;
+    int iY;
+
+    if (!pConfig || pConfig->iSlotCount <= 0) {
+        PbDrawTextCentered(pRsGraph, iLeft + 1,
+                           iTop + ((iBottom - iTop + 1) - RS_FONT_HEIGHT) / 2,
+                           iRight - iLeft - 1,
+                           (const unsigned char *)"NO SLOTS",
+                           RS_GRAY_DARK);
+        return;
+    }
+
+    iCount = pConfig->iSlotCount;
+    if (iCount > RSHL_SLOT_MAX) {
+        iCount = RSHL_SLOT_MAX;
+    }
+
+    if (iSel < 0) {
+        iSel = 0;
+    }
+    if (iSel >= iCount) {
+        iSel = iCount - 1;
+    }
+
+    iFirst = PbSlotTop(iSel, iCount);
+    iY     = iTop;
+
+    for (i = iFirst; i < iCount && iY + PB_SLOT_ROW_H <= iBottom + 1; ++i) {
+        PbDrawSlotRow(pRsGraph, &pConfig->aSlots[i], iY, iLeft, iRight,
+                      i == iSel);
+        iY += PB_SLOT_ROW_H;
+    }
+
+    /* Position counter in the bottom right corner, e.g. "3 / 9". */
+    {
+        unsigned char aText[16];
+        int iLen = 0;
+        int iNum;
+        int iDigits[8];
+        int iCount2 = 0;
+
+        iNum = iSel + 1;
+        do {
+            iDigits[iCount2++] = iNum % 10;
+            iNum /= 10;
+        } while (iNum > 0 && iCount2 < (int)(sizeof(iDigits) / sizeof(iDigits[0])));
+
+        while (iCount2 > 0) {
+            aText[iLen++] = (unsigned char)('0' + iDigits[--iCount2]);
+        }
+
+        aText[iLen++] = ' ';
+        aText[iLen++] = '/';
+        aText[iLen++] = ' ';
+
+        iNum = iCount;
+        iCount2 = 0;
+        do {
+            iDigits[iCount2++] = iNum % 10;
+            iNum /= 10;
+        } while (iNum > 0 && iCount2 < (int)(sizeof(iDigits) / sizeof(iDigits[0])));
+
+        while (iCount2 > 0) {
+            aText[iLen++] = (unsigned char)('0' + iDigits[--iCount2]);
+        }
+        aText[iLen] = 0;
+
+        RsGraphDrawText(pRsGraph, iRight - iLen * RS_FONT_WIDTH - 2,
+                        iBottom - RS_FONT_HEIGHT, aText, RS_GRAY_LIGHT);
+    }
+}
+
 static void PbDrawContent(RSGRAPH* pRsGraph, int iActiveTab, const SYSTEMTIME* pTime,
                           const SYSTEM_INFO* pSysInfo, const RS_POWER_INFO* pPower,
                           const MEMORYSTATUS* pMem, DWORD dwUpSeconds,
                           DWORD dwAnimMs,
+                          const RSHL_CONFIG* pConfig, int iLauncherSel,
                           int iScrW, int iScrH, int iColorMode,
                           int iTop, int iBottom, int iLeft, int iRight) {
     const int iW = iRight - iLeft + 1;
@@ -900,16 +1077,24 @@ static void PbDrawContent(RSGRAPH* pRsGraph, int iActiveTab, const SYSTEMTIME* p
         return;
     }
 
+    if (iActiveTab == PB_TAB_LAUNCHER) {
+        PbDrawLauncherPage(pRsGraph, pConfig, iLauncherSel,
+                           iTop + 2, iBottom - 2, iLeft + 2, iRight - 2);
+        return;
+    }
+
     PbDrawTextCentered(pRsGraph, iLeft + 1, iTop + (iH - RS_FONT_HEIGHT) / 2, iW - 2,
                        (const unsigned char *)"NO DATA", RS_GRAY_DARK);
 }
 
 /* Status bar. The right hand hint is dropped when it would collide with the
    left hand text, which is what happens on a narrow portrait screen. */
-static void PbDrawStatus(RSGRAPH* pRsGraph, int iY, int iLeft, int iRight) {
+static void PbDrawStatus(RSGRAPH* pRsGraph, int iY, int iLeft, int iRight,
+                         BOOL bConfigLoaded) {
     const unsigned char* pLeftText;
     const unsigned char* pRightText;
     const int iW = iRight - iLeft + 1;
+    int       iLeftW;
 
     if (iW >= 300) {
         pLeftText  = (const unsigned char *)"RADIATIVE SHELL v1.0";
@@ -926,9 +1111,19 @@ static void PbDrawStatus(RSGRAPH* pRsGraph, int iY, int iLeft, int iRight) {
 
     RsGraphDrawText(pRsGraph, iLeft, iY, pLeftText, RS_GRAY_LIGHT);
 
+    iLeftW = PbTextWidth(pLeftText);
+
+    /* An asterisk after the name says the configuration came from a real file.
+       It is drawn as its own glyph rather than appended to the string so the
+       collision test below still measures the plain label. */
+    if (bConfigLoaded) {
+        RsGraphDrawText(pRsGraph, iLeft + iLeftW, iY,
+                        (const unsigned char *)"*", RS_GRAY_WHITE);
+        iLeftW += RS_FONT_WIDTH;
+    }
+
     if (pRightText) {
         const int iTextW = PbTextWidth(pRightText);
-        const int iLeftW = PbTextWidth(pLeftText);
 
         /* Keep at least one blank cell between the two labels. */
         if (iLeftW + RS_FONT_WIDTH + iTextW <= iW) {
@@ -940,7 +1135,9 @@ static void PbDrawStatus(RSGRAPH* pRsGraph, int iY, int iLeft, int iRight) {
 void PbDrawScreen(RSGRAPH* pRsGraph, int iActiveTab,
                   const SYSTEMTIME* pTime, const SYSTEM_INFO* pSysInfo,
                   const RS_POWER_INFO* pPower, const MEMORYSTATUS* pMem,
-                  DWORD dwUpSeconds, DWORD dwAnimMs) {
+                  DWORD dwUpSeconds, DWORD dwAnimMs,
+                  const RSHL_CONFIG* pConfig, int iLauncherSel,
+                  BOOL bConfigLoaded) {
     const int iW = pRsGraph->iWidth;
     const int iH = pRsGraph->iHeight;
     const int iFrameX  = PB_OUTER_MARGIN;
@@ -982,11 +1179,12 @@ void PbDrawScreen(RSGRAPH* pRsGraph, int iActiveTab,
     if (iContentBottom > iContentTop) {
         PbDrawContent(pRsGraph, iActiveTab, pTime, pSysInfo, pPower,
                       pMem, dwUpSeconds, dwAnimMs,
+                      pConfig, iLauncherSel,
                       pRsGraph->iWidth, pRsGraph->iHeight, pRsGraph->iColorMode,
                       iContentTop, iContentBottom, iInnerL + 4, iInnerR - 4);
     }
 
-    PbDrawStatus(pRsGraph, iStatusTextY, iInnerL + 3, iInnerR - 3);
+    PbDrawStatus(pRsGraph, iStatusTextY, iInnerL + 3, iInnerR - 3, bConfigLoaded);
 }
 
 int PbTabFromKey(int iVirtKey) {

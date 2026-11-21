@@ -3,6 +3,7 @@
 
 #include "rshell.h"
 #include "battery.h"
+#include "../config/config.h"
 
 /* Tabs shown in the top bar, in display order. */
 #define PB_TAB_STATS        0
@@ -63,6 +64,18 @@
 #define PB_WALK_FRAME_COUNT     6
 #define PB_WALK_FRAME_MS        500
 
+/* Launcher page. Rows are a fixed height so the scroll maths is trivial: the
+   icon is 24 pixels, the display name is drawn at double the font size and the
+   path below it at the normal size, which comes to 30 pixels with the padding.
+   Six of them fit the content band on a 320x240 screen. */
+#define PB_SLOT_ROW_H           30
+#define PB_SLOT_VISIBLE         6
+#define PB_SLOT_ICON_W          24
+#define PB_SLOT_ICON_H          24
+#define PB_SLOT_TEXT_X          33      /* icon width plus the gap        */
+#define PB_SLOT_NAME_SCALE      2
+#define PB_SLOT_SEL_BAR_W       3
+
 /* Draw the complete shell: tabs, content area and status bar.
    pTime    - clock snapshot, only used by the clock tab, may be NULL.
    pSysInfo - GetSystemInfo result, only used by the system tab, may be NULL.
@@ -71,11 +84,17 @@
    dwUpSeconds - uptime in seconds, only used by the system tab.
    dwAnimMs - milliseconds since the stats tab was entered, drives the walk
               cycle. Only used by the stats tab, ignored elsewhere.
+   pConfig  - shell configuration, only used by the launcher tab, may be NULL.
+   iLauncherSel - selected launcher row, only used by the launcher tab.
+   bConfigLoaded - TRUE when pConfig came from rshl.cfg rather than the built
+              in defaults; a small marker is drawn in the status bar.
    A NULL snapshot makes that tab fall back to the placeholder. */
 void PbDrawScreen(RSGRAPH* pRsGraph, int iActiveTab,
                   const SYSTEMTIME* pTime, const SYSTEM_INFO* pSysInfo,
                   const RS_POWER_INFO* pPower, const MEMORYSTATUS* pMem,
-                  DWORD dwUpSeconds, DWORD dwAnimMs);
+                  DWORD dwUpSeconds, DWORD dwAnimMs,
+                  const RSHL_CONFIG* pConfig, int iLauncherSel,
+                  BOOL bConfigLoaded);
 
 /* Map a virtual key to a tab index. Accepts VK_1..VK_4 and the numeric keypad
    equivalents; returns -1 for every other key. */

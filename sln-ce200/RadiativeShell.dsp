@@ -963,6 +963,14 @@ SOURCE=..\config\config.c
 
 SOURCE=..\config\config.h
 # End Source File
+# Begin Source File
+
+SOURCE=..\frontend\settings.c
+# End Source File
+# Begin Source File
+
+SOURCE=..\frontend\settings.h
+# End Source File
 # End Group
 # Begin Group "Resource"
 

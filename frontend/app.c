@@ -3,6 +3,7 @@
 #include "resource.h"
 #include "rshell.h"
 #include "pipboy.h"
+#include "settings.h"
 
 ATOM                MyRegisterClass     (HINSTANCE hInstance, LPTSTR szWindowClass);
 BOOL                InitInstance        (HINSTANCE, int);
@@ -44,6 +45,18 @@ static DWORD        g_dwBootTick = 0;
 /* Battery snapshot, refreshed every time the stats tab is entered. */
 static RS_POWER_INFO g_stPower;
 static BOOL          g_bPowerValid = FALSE;
+
+/* Shell configuration, loaded once at startup. g_bConfigLoaded says whether it
+   came from a real rshl.cfg file or from the built in defaults. */
+static RSHL_CONFIG   g_stConfig;
+static BOOL          g_bConfigLoaded = FALSE;
+
+/* Colour theme in use. Always 0 at start; the theme key cycles it. */
+static int           g_iActiveTheme = 0;
+
+/* Selected launcher row. Kept across tab switches so coming back to the
+   launcher lands on the same entry. */
+static int           g_iLauncherSel = 0;
 
 /* Timers. The clock ticks once a second while the clock tab is visible, the
    walk cycle ticks four times a second while the stats tab is visible. Neither
@@ -211,7 +224,8 @@ static void RedrawScreen(void) {
                  g_bPowerValid ? &g_stPower : NULL,
                  g_bMemValid ? &g_stMemStatus : NULL,
                  (GetTickCount() - g_dwBootTick) / 1000,
-                 g_bAnimActive ? (GetTickCount() - g_dwAnimBase) : 0);
+                 g_bAnimActive ? (GetTickCount() - g_dwAnimBase) : 0,
+                 &g_stConfig, g_iLauncherSel, g_bConfigLoaded);
     RsGraphFlip(&g_rsGraph);
 }
 
@@ -257,6 +271,114 @@ static void SwitchTab(HWND hWnd, int iTab) {
     SyncTimers(hWnd);
     RedrawScreen();
     InvalidateRect(hWnd, NULL, FALSE);
+}
+
+/* Push one theme's four palette indexes into the graph and repaint. On a 2 bpp
+   Windows CE display the graph runs in grayscale mode and ignores bColors, so
+   the picture there simply does not change; that is a hardware limit, not a
+   bug. */
+static void ApplyTheme(HWND hWnd, int iTheme) {
+    int i;
+
+    if (iTheme < 0 || iTheme >= RSHL_THEME_COUNT) {
+        iTheme = 0;
+    }
+
+    g_iActiveTheme = iTheme;
+
+    for (i = 0; i < 4; ++i) {
+        g_rsGraph.bColors[i] = g_stConfig.aThemes[iTheme].bColors[i];
+    }
+
+    if (g_bGraphReady) {
+        RedrawScreen();
+        InvalidateRect(hWnd, NULL, FALSE);
+    }
+}
+
+/* Step to the next theme, wrapping back to the first. */
+static void CycleTheme(HWND hWnd) {
+    ApplyTheme(hWnd, (g_iActiveTheme + 1) % RSHL_THEME_COUNT);
+}
+
+/* Move the launcher selection, clamped to the configured slots. Called from
+   the Action Prev / Action Next keys. */
+static void MoveLauncherSelection(HWND hWnd, int iDelta) {
+    int iCount = g_stConfig.iSlotCount;
+
+    if (iCount > RSHL_SLOT_MAX) {
+        iCount = RSHL_SLOT_MAX;
+    }
+
+    if (iCount <= 0) {
+        g_iLauncherSel = 0;
+        return;
+    }
+
+    g_iLauncherSel += iDelta;
+
+    if (g_iLauncherSel < 0) {
+        g_iLauncherSel = 0;
+    }
+    if (g_iLauncherSel >= iCount) {
+        g_iLauncherSel = iCount - 1;
+    }
+
+    RedrawScreen();
+    InvalidateRect(hWnd, NULL, FALSE);
+}
+
+/* Start the selected slot. The path is stored narrow, so it is widened for
+   CreateProcess. Nothing is minimised: the shell keeps its window and the new
+   program simply lands on top of it. */
+static void LaunchSelected(void) {
+    TCHAR   aPath[RSHL_PATH_MAX];
+    STARTUPINFO         si;
+    PROCESS_INFORMATION pi;
+    char    aNarrow[RSHL_PATH_MAX];
+    int     i;
+    int     iCount = g_stConfig.iSlotCount;
+
+    if (iCount > RSHL_SLOT_MAX) {
+        iCount = RSHL_SLOT_MAX;
+    }
+
+    if (g_iLauncherSel < 0 || g_iLauncherSel >= iCount) {
+        return;
+    }
+
+    aNarrow[0] = 0;
+    {
+        const char* pSrc = g_stConfig.aSlots[g_iLauncherSel].szPath;
+
+        for (i = 0; pSrc[i] && i < (int)sizeof(aNarrow) - 1; ++i) {
+            aNarrow[i] = pSrc[i];
+        }
+        aNarrow[i] = 0;
+    }
+
+    if (!aNarrow[0]) {
+        return;
+    }
+
+#ifdef UNICODE
+    MultiByteToWideChar(CP_ACP, 0, aNarrow, -1, aPath,
+                        (int)(sizeof(aPath) / sizeof(aPath[0])));
+#else
+    for (i = 0; aNarrow[i] && i < (int)sizeof(aPath) - 1; ++i) {
+        aPath[i] = (TCHAR)(unsigned char)aNarrow[i];
+    }
+    aPath[i] = 0;
+#endif
+
+    memset(&si, 0, sizeof(si));
+    si.cb = sizeof(si);
+    memset(&pi, 0, sizeof(pi));
+
+    if (CreateProcess(aPath, NULL, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+    }
 }
 
 /* Direction down while in a portrait orientation mirrors the picture. The
@@ -335,8 +457,13 @@ int WINAPI WinMain( HINSTANCE hInstance,
     MSG msg;
     HACCEL hAccelTable;
 
+    (void)hPrevInstance;
+
 #ifndef VER_PLATFORM_WIN32_CE
     g_iOrientation = ParseOrientation(lpCmdLine);
+#else
+    /* The device reports its own orientation, the command line is unused. */
+    (void)lpCmdLine;
 #endif
 
     if (!InitInstance (hInstance, nCmdShow)) {
@@ -424,9 +551,15 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
     g_iOrientation = DetectCeOrientation(hWnd);
 #endif
 
+    /* Configuration first: the graph needs a palette and the key handling
+       needs the mapping before any message arrives. */
+    g_bConfigLoaded = RsSettingsLoad(&g_stConfig);
+    g_iActiveTheme  = g_stConfig.iActiveTheme;
+
     /* The graph needs the final orientation, so build it here rather than in
        WM_CREATE. */
     if (InitGraph(hWnd)) {
+        ApplyTheme(hWnd, g_iActiveTheme);
         InvalidateRect(hWnd, NULL, FALSE);
         SyncTimers(hWnd);
     }
@@ -450,36 +583,57 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                 default:
                     return DefWindowProc(hWnd, message, wParam, lParam);
             }
-        case WM_KEYDOWN:
-            switch (wParam) {
-                case VK_ESCAPE:
-                case VK_RETURN:
-                    KillTimer(hWnd, RS_TIMER_CLOCK);
-                    KillTimer(hWnd, RS_TIMER_ANIM);
-                    DestroyWindow(hWnd);
-                    break;
-                case VK_UP:
-                    SwitchTab(hWnd, PbNextTab(g_iActiveTab));
-                    break;
-                case VK_DOWN:
-                    /* Auto repeat would flip the picture dozens of times per
-                       second, so only react to the initial key press. */
-                    if (!(lParam & 0x40000000)) {
-                        TogglePortraitOrientation();
-                        RedrawScreen();
-                        InvalidateRect(hWnd, NULL, FALSE);
-                    }
-                    break;
-                default: {
-                    const int iTab = PbTabFromKey((int)wParam);
+        case WM_KEYDOWN: {
+            const RSHL_KEYS* pKeys = &g_stConfig.keys;
 
-                    if (iTab >= 0 && iTab != g_iActiveTab) {
-                        SwitchTab(hWnd, iTab);
-                    }
-                    break;
+            /* Escape always exits and is not remappable: without it a user who
+               assigns both Action keys away would have no way out. */
+            if (wParam == VK_ESCAPE) {
+                KillTimer(hWnd, RS_TIMER_CLOCK);
+                KillTimer(hWnd, RS_TIMER_ANIM);
+                DestroyWindow(hWnd);
+                break;
+            }
+
+            if (wParam == (WPARAM)pKeys->iTabSwitch) {
+                SwitchTab(hWnd, PbNextTab(g_iActiveTab));
+            }
+            else if (wParam == (WPARAM)pKeys->iFlipScreen) {
+                /* Auto repeat would flip the picture dozens of times per
+                   second, so only react to the initial key press. */
+                if (!(lParam & 0x40000000)) {
+                    TogglePortraitOrientation();
+                    RedrawScreen();
+                    InvalidateRect(hWnd, NULL, FALSE);
+                }
+            }
+            else if (wParam == (WPARAM)pKeys->iActionPrev) {
+                if (g_iActiveTab == PB_TAB_LAUNCHER) {
+                    MoveLauncherSelection(hWnd, -1);
+                }
+            }
+            else if (wParam == (WPARAM)pKeys->iActionNext) {
+                if (g_iActiveTab == PB_TAB_LAUNCHER) {
+                    MoveLauncherSelection(hWnd, 1);
+                }
+            }
+            else if (wParam == (WPARAM)pKeys->iThemeSwitch) {
+                CycleTheme(hWnd);
+            }
+            else if (wParam == (WPARAM)pKeys->iAction) {
+                if (g_iActiveTab == PB_TAB_LAUNCHER) {
+                    LaunchSelected();
+                }
+            }
+            else {
+                const int iTab = PbTabFromKey((int)wParam);
+
+                if (iTab >= 0 && iTab != g_iActiveTab) {
+                    SwitchTab(hWnd, iTab);
                 }
             }
             break;
+        }
         case WM_TIMER:
             if (wParam == RS_TIMER_CLOCK) {
                 SYSTEMTIME stNow;
@@ -578,5 +732,8 @@ void CenterWindow(HWND hWnd) {
         0, 0,
         SWP_NOSIZE
     );
+#else
+    /* Windows CE runs the shell full screen, so there is nothing to centre. */
+    (void)hWnd;
 #endif
 }
