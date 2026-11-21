@@ -24,6 +24,7 @@ LRESULT CALLBACK    About			(HWND, UINT, WPARAM, LPARAM);
 LRESULT CALLBACK    ThemeDlgProc	(HWND, UINT, WPARAM, LPARAM);
 LRESULT CALLBACK    KeyDlgProc		(HWND, UINT, WPARAM, LPARAM);
 LRESULT CALLBACK    KeyCaptureDlgProc(HWND, UINT, WPARAM, LPARAM);
+LRESULT CALLBACK    SlotDlgProc		(HWND, UINT, WPARAM, LPARAM);
 
 /* -------------------------------------------------------------------------
    Text helpers. config.c speaks ANSI, the window speaks TCHAR, so the two
@@ -1237,6 +1238,307 @@ static void ShowKeyEditor(HWND hWnd) {
     }
 }
 
+/* -------------------------------------------------------------------------
+   Slot editor. Nine rows of type, name, path and a Select button. The rows are
+   numbered, so the panel is a fixed grid: control ids count up by row and the
+   resource file lays the rows out the same way this code walks them.
+   ------------------------------------------------------------------------- */
+
+/* Field numbers, in the order the row control ids are spaced. */
+#define SLOT_FIELD_TYPE     0
+#define SLOT_FIELD_NAME     1
+#define SLOT_FIELD_PATH     2
+#define SLOT_FIELD_SELECT   3
+
+static int SlotRowId(int iRow, int iField) {
+    switch (iField) {
+        case SLOT_FIELD_NAME:   return IDC_SLOT_NAME_0 + iRow;
+        case SLOT_FIELD_PATH:   return IDC_SLOT_PATH_0 + iRow;
+        case SLOT_FIELD_SELECT: return IDC_SLOT_SEL_0 + iRow;
+        default:                return IDC_SLOT_TYPE_0 + iRow;
+    }
+}
+
+/* Scratch copy the dialog edits. */
+static RSHL_CONFIG* g_pSlotEdit;
+
+/* Fill one combo with the ten type names; the item index is the type number. */
+static void SlotFillCombo(HWND hDlg, int iRow) {
+    const HWND hCombo = GetDlgItem(hDlg, SlotRowId(iRow, SLOT_FIELD_TYPE));
+    int        i;
+
+    if (!hCombo) {
+        return;
+    }
+
+    for (i = 0; i <= RSHL_TYPE_UTILITIES; ++i) {
+        const char* pszName = ConfigSlotTypeName(i);
+        TCHAR       aText[32];
+
+        AnsiToTChar(pszName ? pszName : "Unknown", aText,
+                    (int)(sizeof(aText) / sizeof(aText[0])));
+        SendMessage(hCombo, CB_ADDSTRING, 0, (LPARAM)aText);
+    }
+}
+
+/* Put g_pSlotEdit back into the nine rows. */
+static void SlotRefresh(HWND hDlg) {
+    int i;
+
+    if (!g_pSlotEdit) {
+        return;
+    }
+
+    for (i = 0; i < RSHL_SLOT_MAX; ++i) {
+        const HWND hCombo = GetDlgItem(hDlg, SlotRowId(i, SLOT_FIELD_TYPE));
+        TCHAR      aName[RSHL_NAME_MAX];
+        TCHAR      aPath[RSHL_PATH_MAX];
+
+        AnsiToTChar(g_pSlotEdit->aSlots[i].szName, aName, RSHL_NAME_MAX);
+        AnsiToTChar(g_pSlotEdit->aSlots[i].szPath, aPath, RSHL_PATH_MAX);
+
+        if (hCombo) {
+            SendMessage(hCombo, CB_SETCURSEL,
+                        (WPARAM)g_pSlotEdit->aSlots[i].iType, 0);
+        }
+
+        SetDlgItemText(hDlg, SlotRowId(i, SLOT_FIELD_NAME), aName);
+        SetDlgItemText(hDlg, SlotRowId(i, SLOT_FIELD_PATH), aPath);
+    }
+}
+
+/* Ask for a program, then fill the path and a default name into the row. */
+static void SlotPickFile(HWND hDlg, int iRow) {
+    OPENFILENAME ofn;
+    TCHAR        aFile[CFG_PATH_TEXT];
+    TCHAR        aName[RSHL_NAME_MAX];
+    TCHAR*       pBase;
+    TCHAR*       pDot;
+    TCHAR*       pSlash;
+    int          i;
+
+    aFile[0] = 0;
+
+    memset(&ofn, 0, sizeof(ofn));
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner   = hDlg;
+    ofn.lpstrFilter = TEXT("Programs (*.exe)\0*.exe\0All files (*.*)\0*.*\0\0");
+    ofn.lpstrFile   = aFile;
+    ofn.nMaxFile    = CFG_PATH_TEXT;
+    ofn.Flags       = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+
+    if (!GetOpenFileName(&ofn)) {
+        return;
+    }
+
+    SetDlgItemText(hDlg, SlotRowId(iRow, SLOT_FIELD_PATH), aFile);
+
+    /* Display name: the file name without its directory or extension. */
+    pBase = aFile;
+    pSlash = _tcsrchr(aFile, TEXT('\\'));
+    if (pSlash) {
+        pBase = pSlash + 1;
+    }
+    {
+        TCHAR* pForward = _tcsrchr(aFile, TEXT('/'));
+
+        if (pForward && pForward > pBase) {
+            pBase = pForward + 1;
+        }
+    }
+
+    pDot = _tcsrchr(pBase, TEXT('.'));
+    for (i = 0; pBase[i] && i < (int)(sizeof(aName) / sizeof(aName[0])) - 1; ++i) {
+        if (pDot && (pBase + i) == pDot) {
+            break;
+        }
+        aName[i] = pBase[i];
+    }
+    aName[i] = 0;
+
+    SetDlgItemText(hDlg, SlotRowId(iRow, SLOT_FIELD_NAME), aName);
+}
+
+/* Read one row into pSlot. A row with nothing in it ends the list. */
+static BOOL SlotReadRow(HWND hDlg, int iRow, RSHL_SLOT* pSlot, BOOL* pbEmpty) {
+    const HWND hCombo = GetDlgItem(hDlg, SlotRowId(iRow, SLOT_FIELD_TYPE));
+    TCHAR      aName[RSHL_NAME_MAX];
+    TCHAR      aPath[RSHL_PATH_MAX];
+
+    aName[0] = 0;
+    aPath[0] = 0;
+    GetDlgItemText(hDlg, SlotRowId(iRow, SLOT_FIELD_NAME), aName,
+                   (int)(sizeof(aName) / sizeof(aName[0])));
+    GetDlgItemText(hDlg, SlotRowId(iRow, SLOT_FIELD_PATH), aPath,
+                   (int)(sizeof(aPath) / sizeof(aPath[0])));
+
+    *pbEmpty = (!aName[0] && !aPath[0]);
+    if (*pbEmpty) {
+        return TRUE;
+    }
+
+    /* A half filled row is a mistake, not a deliberate blank. */
+    if (!aName[0] || !aPath[0]) {
+        return FALSE;
+    }
+
+    memset(pSlot, 0, sizeof(*pSlot));
+
+    pSlot->iType = 0;
+    if (hCombo) {
+        const LRESULT iSel = SendMessage(hCombo, CB_GETCURSEL, 0, 0);
+
+        if (iSel != CB_ERR) {
+            pSlot->iType = (int)iSel;
+        }
+    }
+
+    TCharToAnsi(aName, pSlot->szName, (int)sizeof(pSlot->szName));
+    TCharToAnsi(aPath, pSlot->szPath, (int)sizeof(pSlot->szPath));
+
+    return TRUE;
+}
+
+/* Reason a row failed, so the message can say what is actually wrong. */
+#define SLOT_BAD_NONE       0
+#define SLOT_BAD_PARTIAL    1   /* name or path missing            */
+#define SLOT_BAD_AFTER_GAP  2   /* filled row after a blank one    */
+
+/* Read all nine rows. Returns TRUE and sets the count on success, or FALSE
+   with the offending row number and reason. */
+static BOOL SlotReadAll(HWND hDlg, RSHL_SLOT* aSlots, int* piCount,
+                        int* piBadRow, int* piBadReason) {
+    int  iCount = 0;
+    BOOL bEnded = FALSE;
+    int  i;
+
+    *piBadRow    = 0;
+    *piBadReason = SLOT_BAD_NONE;
+
+    for (i = 0; i < RSHL_SLOT_MAX; ++i) {
+        RSHL_SLOT slot;
+        BOOL      bEmpty = FALSE;
+
+        if (!SlotReadRow(hDlg, i, &slot, &bEmpty)) {
+            *piBadRow    = i;
+            *piBadReason = SLOT_BAD_PARTIAL;
+            return FALSE;
+        }
+
+        if (bEmpty) {
+            bEnded = TRUE;
+            continue;
+        }
+
+        /* Once a blank row appears the list is over; a filled row after it
+           would silently move up on the next save. */
+        if (bEnded) {
+            *piBadRow    = i;
+            *piBadReason = SLOT_BAD_AFTER_GAP;
+            return FALSE;
+        }
+
+        aSlots[iCount++] = slot;
+    }
+
+    *piCount = iCount;
+    return TRUE;
+}
+
+LRESULT CALLBACK SlotDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
+    switch (message) {
+        case WM_INITDIALOG: {
+            int i;
+
+            g_pSlotEdit = (RSHL_CONFIG*)lParam;
+
+            for (i = 0; i < RSHL_SLOT_MAX; ++i) {
+                SlotFillCombo(hDlg, i);
+            }
+
+            SlotRefresh(hDlg);
+            CenterDialog(hDlg);
+            return TRUE;
+        }
+
+        case WM_COMMAND: {
+            const int iId = LOWORD(wParam);
+            int       i;
+
+            if (iId == IDOK) {
+                int  iCount = 0;
+                int  iBadRow = 0;
+                int  iBadReason = SLOT_BAD_NONE;
+                TCHAR aMessage[192];
+
+                if (!SlotReadAll(hDlg, g_pSlotEdit->aSlots, &iCount,
+                                 &iBadRow, &iBadReason)) {
+                    aMessage[0] = 0;
+                    AppendText(aMessage,
+                               (int)(sizeof(aMessage) / sizeof(aMessage[0])),
+                               TEXT("Row "));
+                    AppendDec(aMessage,
+                              (int)(sizeof(aMessage) / sizeof(aMessage[0])),
+                              iBadRow + 1);
+
+                    if (iBadReason == SLOT_BAD_AFTER_GAP) {
+                        AppendText(aMessage,
+                                   (int)(sizeof(aMessage) / sizeof(aMessage[0])),
+                                   TEXT(" is filled but an earlier row is blank. "
+                                        "Fill the rows from the top."));
+                        MessageBox(hDlg, aMessage, TEXT("Row Out Of Order"),
+                                   MB_OK | MB_ICONWARNING);
+                    }
+                    else {
+                        AppendText(aMessage,
+                                   (int)(sizeof(aMessage) / sizeof(aMessage[0])),
+                                   TEXT(" needs both a name and a path, or "
+                                        "neither."));
+                        MessageBox(hDlg, aMessage, TEXT("Incomplete Row"),
+                                   MB_OK | MB_ICONWARNING);
+                    }
+                    return TRUE;
+                }
+
+                g_pSlotEdit->iSlotCount = iCount;
+                EndDialog(hDlg, TRUE);
+                return TRUE;
+            }
+
+            if (iId == IDCANCEL) {
+                EndDialog(hDlg, FALSE);
+                return TRUE;
+            }
+
+            /* A Select button on one of the nine rows. */
+            for (i = 0; i < RSHL_SLOT_MAX; ++i) {
+                if (iId == SlotRowId(i, SLOT_FIELD_SELECT)) {
+                    SlotPickFile(hDlg, i);
+                    return TRUE;
+                }
+            }
+            break;
+        }
+
+        default:
+            break;
+    }
+
+    return FALSE;
+}
+
+/* Open the slot editor and copy the result back into g_cfg. */
+static void ShowSlotEditor(HWND hWnd) {
+    RSHL_CONFIG scratch = g_cfg;
+
+    if (DialogBoxParam(hInst, (LPCTSTR)IDD_SLOTEDIT, hWnd,
+                       (DLGPROC)SlotDlgProc, (LPARAM)&scratch)) {
+        g_cfg.iSlotCount = scratch.iSlotCount;
+        memcpy(g_cfg.aSlots, scratch.aSlots, sizeof(g_cfg.aSlots));
+        InvalidateRect(hWnd, NULL, TRUE);
+    }
+}
+
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
     HDC         hdc;
     PAINTSTRUCT ps;
@@ -1261,8 +1563,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                    ShowKeyEditor(hWnd);
                    break;
                 case IDM_EDIT_SLOTS:
-                   /* Not written yet: the menu item is disabled in
-                      WM_INITMENUPOPUP, so this is only a safety net. */
+                   ShowSlotEditor(hWnd);
                    break;
                 case IDM_FILE_EXIT:
                    DestroyWindow(hWnd);
@@ -1270,15 +1571,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                 default:
                    return DefWindowProc(hWnd, message, wParam, lParam);
             }
-            break;
-        case WM_INITMENUPOPUP:
-            /* The Slots editor does not exist yet, so it is always greyed.
-               EnableMenuItem returns -1 for a command the popup does not own,
-               which is what happens for File and Help, so no filtering on the
-               menu handle is needed. GetMenuState is avoided on purpose: the
-               Windows CE headers do not declare it. */
-            EnableMenuItem((HMENU)wParam, IDM_EDIT_SLOTS,
-                           MF_BYCOMMAND | MF_GRAYED);
             break;
         case WM_CREATE:
             g_hFont     = CreateUiFont(FW_NORMAL);

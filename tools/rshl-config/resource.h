@@ -11,6 +11,7 @@
 #define IDD_THEMEEDIT                   104
 #define IDD_KEYEDIT                     105
 #define IDD_KEYCAPTURE                  106
+#define IDD_SLOTEDIT                    107
 #define IDM_FILE_EXIT                   40002
 #define IDM_HELP_ABOUT                  40003
 #define IDM_FILE_OPEN                   40004
@@ -50,13 +51,54 @@
 // Key Capture dialog.
 #define IDC_KEYCAP_HINT                1140
 
+// Slot Editor: nine rows of type, name, path and a Select button.
+#define IDC_SLOT_TYPE_0                1150
+#define IDC_SLOT_TYPE_1                1151
+#define IDC_SLOT_TYPE_2                1152
+#define IDC_SLOT_TYPE_3                1153
+#define IDC_SLOT_TYPE_4                1154
+#define IDC_SLOT_TYPE_5                1155
+#define IDC_SLOT_TYPE_6                1156
+#define IDC_SLOT_TYPE_7                1157
+#define IDC_SLOT_TYPE_8                1158
+
+#define IDC_SLOT_NAME_0                1170
+#define IDC_SLOT_NAME_1                1171
+#define IDC_SLOT_NAME_2                1172
+#define IDC_SLOT_NAME_3                1173
+#define IDC_SLOT_NAME_4                1174
+#define IDC_SLOT_NAME_5                1175
+#define IDC_SLOT_NAME_6                1176
+#define IDC_SLOT_NAME_7                1177
+#define IDC_SLOT_NAME_8                1178
+
+#define IDC_SLOT_PATH_0                1190
+#define IDC_SLOT_PATH_1                1191
+#define IDC_SLOT_PATH_2                1192
+#define IDC_SLOT_PATH_3                1193
+#define IDC_SLOT_PATH_4                1194
+#define IDC_SLOT_PATH_5                1195
+#define IDC_SLOT_PATH_6                1196
+#define IDC_SLOT_PATH_7                1197
+#define IDC_SLOT_PATH_8                1198
+
+#define IDC_SLOT_SEL_0                 1210
+#define IDC_SLOT_SEL_1                 1211
+#define IDC_SLOT_SEL_2                 1212
+#define IDC_SLOT_SEL_3                 1213
+#define IDC_SLOT_SEL_4                 1214
+#define IDC_SLOT_SEL_5                 1215
+#define IDC_SLOT_SEL_6                 1216
+#define IDC_SLOT_SEL_7                 1217
+#define IDC_SLOT_SEL_8                 1218
+
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        107
+#define _APS_NEXT_RESOURCE_VALUE        108
 #define _APS_NEXT_COMMAND_VALUE         40009
-#define _APS_NEXT_CONTROL_VALUE         1142
+#define _APS_NEXT_CONTROL_VALUE         1219
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif
