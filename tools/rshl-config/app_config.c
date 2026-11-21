@@ -162,7 +162,7 @@ static void AppendDec(TCHAR* pDst, int cchDst, int iValue) {
 #define UI_SWATCH_W     30
 #define UI_SWATCH_H     16
 #define UI_SWATCH_GAP   6
-#define UI_SWATCH_X     56
+#define UI_SWATCH_X     32
 #define UI_KEY_VALUE_DX 52
 #define UI_COL2_X       124
 
@@ -204,9 +204,9 @@ static void DrawThemeRow(HDC hdc, int iY, int iIndex) {
     const COLORREF kFrame = RGB(0x80, 0x80, 0x80);
 
     aLabel[0] = 0;
-    AppendText(aLabel, (int)(sizeof(aLabel) / sizeof(aLabel[0])), TEXT("Theme "));
+    AppendText(aLabel, (int)(sizeof(aLabel) / sizeof(aLabel[0])), TEXT("#"));
     AppendDec(aLabel, (int)(sizeof(aLabel) / sizeof(aLabel[0])), iIndex);
-    DrawLine(hdc, UI_MARGIN, iY, aLabel, g_hFont);
+    DrawLine(hdc, UI_MARGIN, iY + 4, aLabel, g_hFont);
 
     /* A neutral outline keeps the near black swatches visible. */
     hPen    = CreatePen(PS_SOLID, 1, kFrame);
