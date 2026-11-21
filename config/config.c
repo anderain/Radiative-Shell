@@ -215,10 +215,43 @@ static BOOL CfgParseDec(const char* pText, int* piValue, int iMin, int iMax) {
    File access, Win32 only.
    ------------------------------------------------------------------------- */
 
+/* Widen a path for the TCHAR file API. Windows CE only exports the Unicode
+   entry points, so the conversion happens here and the callers stay narrow.
+   Returns FALSE when the path does not fit in cchOut characters. */
+static BOOL CfgPathToTChar(const char* pszPath, TCHAR* pszOut, int cchOut) {
+    if (!pszPath || !pszOut || cchOut <= 0) {
+        return FALSE;
+    }
+
+    pszOut[0] = 0;
+
+#ifdef UNICODE
+    /* -1 includes the terminator; a zero return means the buffer was too
+       small or the path was not valid in the current code page. */
+    return MultiByteToWideChar(CP_ACP, 0, pszPath, -1, pszOut, cchOut) > 0;
+#else
+    {
+        int i;
+
+        for (i = 0; pszPath[i]; ++i) {
+            if (i >= cchOut - 1) {
+                return FALSE;
+            }
+            pszOut[i] = (TCHAR)pszPath[i];
+        }
+
+        pszOut[i] = 0;
+    }
+
+    return TRUE;
+#endif
+}
+
 /* Read a whole file into a NUL terminated buffer. *ppBuf is set to NULL on
    failure and *piSize tells the caller which message to use. */
 static BOOL CfgReadFile(const char* pszPath, char** ppBuf, int* piSize,
                         BOOL* pbMissing) {
+    TCHAR  szPath[CFG_PATH_TEXT];
     HANDLE hFile;
     DWORD  dwSize;
     DWORD  dwRead = 0;
@@ -228,8 +261,12 @@ static BOOL CfgReadFile(const char* pszPath, char** ppBuf, int* piSize,
     *piSize    = 0;
     *pbMissing = FALSE;
 
-    hFile = CreateFileA(pszPath, GENERIC_READ, FILE_SHARE_READ, NULL,
-                        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (!CfgPathToTChar(pszPath, szPath, CFG_PATH_TEXT)) {
+        return FALSE;
+    }
+
+    hFile = CreateFile(szPath, GENERIC_READ, FILE_SHARE_READ, NULL,
+                       OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hFile == INVALID_HANDLE_VALUE) {
         *pbMissing = TRUE;
         return FALSE;
@@ -641,6 +678,7 @@ BOOL ConfigLoad(const char* pszPath, RSHL_CONFIG* pConfig,
 BOOL ConfigSave(const char* pszPath, const RSHL_CONFIG* pConfig,
                 char* pError, int iErrorSize) {
     CFG_WRITER writer;
+    TCHAR      szPath[CFG_PATH_TEXT];
     HANDLE     hFile;
     DWORD      dwWritten = 0;
     int        i, j;
@@ -653,6 +691,11 @@ BOOL ConfigSave(const char* pszPath, const RSHL_CONFIG* pConfig,
 
     if (pConfig->iSlotCount < 0 || pConfig->iSlotCount > RSHL_SLOT_MAX) {
         CfgFail(pError, iErrorSize, 0, "slot count is out of range");
+        return FALSE;
+    }
+
+    if (!CfgPathToTChar(pszPath, szPath, CFG_PATH_TEXT)) {
+        CfgFail(pError, iErrorSize, 0, "the file name is too long");
         return FALSE;
     }
 
@@ -695,8 +738,8 @@ BOOL ConfigSave(const char* pszPath, const RSHL_CONFIG* pConfig,
         return FALSE;
     }
 
-    hFile = CreateFileA(pszPath, GENERIC_WRITE, 0, NULL,
-                        CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    hFile = CreateFile(szPath, GENERIC_WRITE, 0, NULL,
+                       CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hFile == INVALID_HANDLE_VALUE) {
         CfgWriterFree(&writer);
         CfgFail(pError, iErrorSize, 0, "cannot create the file");

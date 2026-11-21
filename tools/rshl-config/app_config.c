@@ -4,7 +4,7 @@
 #include <tchar.h>
 #include <string.h>
 #include "resource.h"
-#include "config.h"
+#include "../../config/config.h"
 
 HINSTANCE        	hInst;
 HWND                hwndCB;
@@ -13,6 +13,7 @@ HWND                hwndCB;
 static RSHL_CONFIG  g_cfg;
 static char         g_szPath[CFG_PATH_TEXT];
 static char         g_szStatus[CFG_STATUS_TEXT];
+static HFONT        g_hFont;
 
 ATOM                MyRegisterClass	(HINSTANCE hInstance, LPTSTR szWindowClass);
 BOOL                InitInstance	(HINSTANCE, int);
@@ -23,14 +24,71 @@ LRESULT CALLBACK    About			(HWND, UINT, WPARAM, LPARAM);
    Text helpers. config.c speaks ANSI, the window speaks TCHAR, so the two
    conversions live here, together with the small append helpers the status
    text is built from.
+
+   Nothing here calls an -A entry point: Windows CE only exports the Unicode
+   ones, and the narrow builds get a plain loop instead.
    ------------------------------------------------------------------------- */
 
-static void TCharToAnsi(const TCHAR* pSrc, char* pDst, int cbDst) {
+static void AnsiToTChar(const char* pSrc, TCHAR* pDst, int cchDst) {
+    int i;
+
+    if (!pSrc || !pDst || cchDst <= 0) {
+        return;
+    }
+
 #ifdef UNICODE
-    WideCharToMultiByte(CP_ACP, 0, pSrc, -1, pDst, cbDst, NULL, NULL);
-#else
-    lstrcpynA(pDst, pSrc, cbDst);
+    if (MultiByteToWideChar(CP_ACP, 0, pSrc, -1, pDst, cchDst) > 0) {
+        return;
+    }
 #endif
+
+    for (i = 0; pSrc[i] && i < cchDst - 1; ++i) {
+        pDst[i] = (TCHAR)(unsigned char)pSrc[i];
+    }
+    pDst[i] = 0;
+}
+
+static void TCharToAnsi(const TCHAR* pSrc, char* pDst, int cbDst) {
+    int i;
+
+    if (!pSrc || !pDst || cbDst <= 0) {
+        return;
+    }
+
+#ifdef UNICODE
+    if (WideCharToMultiByte(CP_ACP, 0, pSrc, -1, pDst, cbDst, NULL, NULL) > 0) {
+        return;
+    }
+#endif
+
+    for (i = 0; pSrc[i] && i < cbDst - 1; ++i) {
+        pDst[i] = (char)(unsigned char)pSrc[i];
+    }
+    pDst[i] = 0;
+}
+
+/* Bounded ANSI copy, the job the -A string functions used to do. */
+static void CopyAnsi(char* pDst, int cbDst, const char* pSrc) {
+    int i;
+
+    if (!pDst || cbDst <= 0) {
+        return;
+    }
+
+    for (i = 0; pSrc && pSrc[i] && i < cbDst - 1; ++i) {
+        pDst[i] = pSrc[i];
+    }
+    pDst[i] = 0;
+}
+
+/* Message box with an ANSI body, so callers can pass config.c text straight
+   through without an -A entry point. */
+static void ShowAnsiMessage(HWND hWnd, const char* pText, const TCHAR* pCaption,
+                            UINT uType) {
+    TCHAR szText[CFG_ERROR_TEXT];
+
+    AnsiToTChar(pText, szText, CFG_ERROR_TEXT);
+    MessageBox(hWnd, szText, pCaption, uType);
 }
 
 static void StatusAppend(const char* pText) {
@@ -159,13 +217,14 @@ static BOOL LoadConfigFile(HWND hWnd, const char* pszPath) {
         StatusAppend(szError);
 
         if (hWnd) {
-            MessageBoxA(hWnd, szError, "Load failed", MB_OK | MB_ICONERROR);
+            ShowAnsiMessage(hWnd, szError, TEXT("Load failed"),
+                            MB_OK | MB_ICONERROR);
         }
         return FALSE;
     }
 
     g_cfg = loaded;
-    lstrcpynA(g_szPath, pszPath, (int)sizeof(g_szPath));
+    CopyAnsi(g_szPath, (int)sizeof(g_szPath), pszPath);
     RefreshStatusText();
 
     if (hWnd) {
@@ -181,7 +240,7 @@ static void DoFileDialog(HWND hWnd, BOOL bSave) {
     char         szPath[CFG_PATH_TEXT];
     char         szError[CFG_ERROR_TEXT];
 
-    ZeroMemory(&ofn, sizeof(ofn));
+    memset(&ofn, 0, sizeof(ofn));
     ofn.lStructSize = sizeof(ofn);
     ofn.hwndOwner   = hWnd;
     ofn.lpstrFilter = TEXT("Config files (*.cfg)\0*.cfg\0All files (*.*)\0*.*\0\0");
@@ -214,11 +273,12 @@ static void DoFileDialog(HWND hWnd, BOOL bSave) {
         szError[0] = 0;
 
         if (!ConfigSave(szPath, &g_cfg, szError, (int)sizeof(szError))) {
-            MessageBoxA(hWnd, szError, "Save failed", MB_OK | MB_ICONERROR);
+            ShowAnsiMessage(hWnd, szError, TEXT("Save failed"),
+                            MB_OK | MB_ICONERROR);
             return;
         }
 
-        lstrcpynA(g_szPath, szPath, (int)sizeof(g_szPath));
+        CopyAnsi(g_szPath, (int)sizeof(g_szPath), szPath);
         RefreshStatusText();
         InvalidateRect(hWnd, NULL, TRUE);
     }
@@ -330,6 +390,39 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
     return TRUE;
 }
 
+/* -------------------------------------------------------------------------
+   Font. Tahoma at 8 points, the same face the About dialog asks the loader
+   for, so the client area and the dialog match.
+   ------------------------------------------------------------------------- */
+
+static HFONT CreateUiFont(void) {
+    HDC  hdc = GetDC(NULL);
+    int  iHeight = -11;
+    HFONT hFont;
+
+    if (hdc) {
+        const int iDpi = GetDeviceCaps(hdc, LOGPIXELSY);
+
+        if (iDpi > 0) {
+            iHeight = -((8 * iDpi + 36) / 72);
+        }
+        ReleaseDC(NULL, hdc);
+    }
+
+    hFont = CreateFont(
+        iHeight, 0, 0, 0,
+        FW_NORMAL,
+        FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET,
+        OUT_DEFAULT_PRECIS,
+        CLIP_DEFAULT_PRECIS,
+        DEFAULT_QUALITY,
+        DEFAULT_PITCH | FF_SWISS,
+        TEXT("Tahoma"));
+
+    return hFont;
+}
+
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
     HDC hdc;
     PAINTSTRUCT ps;
@@ -355,6 +448,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
             }
             break;
         case WM_CREATE:
+            g_hFont = CreateUiFont();
 #ifdef VER_PLATFORM_WIN32_CE
             hwndCB = CommandBar_Create(hInst, hWnd, 1);
             CommandBar_InsertMenubar(hwndCB, hInst, IDM_MENU, 0);
@@ -364,14 +458,26 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         case WM_PAINT:
             hdc = BeginPaint(hWnd, &ps);
             GetClientRect(hWnd, &rt);
-            DrawTextA(hdc, g_szStatus, -1, &rt,
-                DT_LEFT | DT_TOP | DT_NOPREFIX | DT_EDITCONTROL);
+            {
+                TCHAR  szStatus[CFG_STATUS_TEXT];
+                HFONT  hOld;
+
+                AnsiToTChar(g_szStatus, szStatus, CFG_STATUS_TEXT);
+                hOld = (HFONT)SelectObject(hdc, g_hFont ? g_hFont : GetStockObject(SYSTEM_FONT));
+                DrawText(hdc, szStatus, -1, &rt,
+                    DT_LEFT | DT_TOP | DT_NOPREFIX);
+                SelectObject(hdc, hOld);
+            }
             EndPaint(hWnd, &ps);
             break;
         case WM_DESTROY:
 #ifdef VER_PLATFORM_WIN32_CE
             CommandBar_Destroy(hwndCB);
 #endif
+            if (g_hFont) {
+                DeleteObject(g_hFont);
+                g_hFont = NULL;
+            }
             PostQuitMessage(0);
             break;
         default:

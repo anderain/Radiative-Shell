@@ -32,7 +32,7 @@ WINDRES := windres
 # Make runs through cmd.exe, so paths must use backslashes.
 MKDIR = if not exist "$(subst /,\,$1)" mkdir "$(subst /,\,$1)"
 
-CPPFLAGS := $(addprefix -I,$(SRCDIRS))
+# No -I is needed: every module includes its neighbours by relative path.
 CFLAGS   := $(OPT) $(DEFS) -Wall -fno-common -MMD -MP
 LDFLAGS  := -mwindows
 LDLIBS   := -lcomdlg32 -lcomctl32 -lgdi32 -luser32 -lkernel32
@@ -59,7 +59,7 @@ $(TARGET): $(OBJS) $(RES)
 	$(CC) $^ $(LDFLAGS) $(LDLIBS) -o $@
 
 $(OBJDIR)/%.o: %.c | $(OBJDIR)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -c $< -o $@
 
 # -O coff is required: windres defaults to a .res file that gcc cannot link.
 $(RES): $(word 1,$(SRCDIRS))/resource.rc $(word 1,$(SRCDIRS))/resource.h $(word 1,$(SRCDIRS))/app.ico | $(OBJDIR)
