@@ -1484,16 +1484,16 @@ LRESULT CALLBACK SlotDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lPar
                     if (iBadReason == SLOT_BAD_AFTER_GAP) {
                         AppendText(aMessage,
                                    (int)(sizeof(aMessage) / sizeof(aMessage[0])),
-                                   TEXT(" is filled but an earlier row is blank. "
-                                        "Fill the rows from the top."));
+                                   TEXT(" is filled but an earlier row is blank. ")
+                                   TEXT("Fill the rows from the top."));
                         MessageBox(hDlg, aMessage, TEXT("Row Out Of Order"),
                                    MB_OK | MB_ICONWARNING);
                     }
                     else {
                         AppendText(aMessage,
                                    (int)(sizeof(aMessage) / sizeof(aMessage[0])),
-                                   TEXT(" needs both a name and a path, or "
-                                        "neither."));
+                                   TEXT(" needs both a name and a path, or ")
+                                   TEXT("neither."));
                         MessageBox(hDlg, aMessage, TEXT("Incomplete Row"),
                                    MB_OK | MB_ICONWARNING);
                     }

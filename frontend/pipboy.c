@@ -1111,7 +1111,7 @@ static void PbDrawStatus(RSGRAPH* pRsGraph, int iY, int iLeft, int iRight,
 
     RsGraphDrawText(pRsGraph, iLeft, iY, pLeftText, RS_GRAY_LIGHT);
 
-    iLeftW = PbTextWidth(pLeftText);
+    iLeftW = PbTextWidth(pLeftText) + RS_FONT_WIDTH;
 
     /* An asterisk after the name says the configuration came from a real file.
        It is drawn as its own glyph rather than appended to the string so the

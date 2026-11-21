@@ -72,7 +72,7 @@
 #define PB_SLOT_VISIBLE         6
 #define PB_SLOT_ICON_W          24
 #define PB_SLOT_ICON_H          24
-#define PB_SLOT_TEXT_X          33      /* icon width plus the gap        */
+#define PB_SLOT_TEXT_X          40      /* icon width plus the gap        */
 #define PB_SLOT_NAME_SCALE      2
 #define PB_SLOT_SEL_BAR_W       3
 
