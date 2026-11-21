@@ -221,39 +221,26 @@ static BOOL ParseHexByte(const TCHAR* pText, BYTE* pbValue) {
     return TRUE;
 }
 
-/* Center a dialog over its owner. Every dialog calls this from
-   WM_INITDIALOG, so the placement rule lives in one place. */
+/* Center a dialog over its owner. The same calls the About box has always
+   used, kept deliberately: GetDesktopWindow and friends are not declared by
+   the Windows CE headers this tool also targets. */
 static void CenterDialog(HWND hDlg) {
-    RECT rectDialog;
-    RECT rectOwner;
-    int  iX;
-    int  iY;
+    RECT rt, rt1;
+    int DlgWidth, DlgHeight;
+    int NewPosX, NewPosY;
 
-    if (!GetWindowRect(hDlg, &rectDialog)) {
-        return;
+    if (GetWindowRect(hDlg, &rt1)) {
+        GetClientRect(GetParent(hDlg), &rt);
+        DlgWidth    = rt1.right - rt1.left;
+        DlgHeight   = rt1.bottom - rt1.top;
+        NewPosX     = (rt.right - rt.left - DlgWidth) / 2;
+        NewPosY     = (rt.bottom - rt.top - DlgHeight) / 2;
+
+        if (NewPosX < 0) NewPosX = 0;
+        if (NewPosY < 0) NewPosY = 0;
+        SetWindowPos(hDlg, 0, NewPosX, NewPosY,
+                     0, 0, SWP_NOZORDER | SWP_NOSIZE);
     }
-
-    /* Owner is the parent window; fall back to the desktop when there is
-       none, so the dialog still lands somewhere sensible. */
-    if (!GetWindowRect(GetParent(hDlg), &rectOwner)) {
-        GetWindowRect(GetDesktopWindow(), &rectOwner);
-    }
-
-    iX = rectOwner.left
-         + ((rectOwner.right - rectOwner.left)
-            - (rectDialog.right - rectDialog.left)) / 2;
-    iY = rectOwner.top
-         + ((rectOwner.bottom - rectOwner.top)
-            - (rectDialog.bottom - rectDialog.top)) / 2;
-
-    if (iX < 0) {
-        iX = 0;
-    }
-    if (iY < 0) {
-        iY = 0;
-    }
-
-    SetWindowPos(hDlg, NULL, iX, iY, 0, 0, SWP_NOZORDER | SWP_NOSIZE);
 }
 
 /* -------------------------------------------------------------------------
@@ -881,18 +868,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
             }
             break;
         case WM_INITMENUPOPUP:
-            /* Key and Slots editors do not exist yet; grey them instead of
-               letting a click do nothing at all. The popup is identified by
-               the presence of the Theme command rather than by its index,
-               because Windows CE builds the menu inside a CommandBar and the
-               index can differ there. */
-            if (GetMenuState((HMENU)wParam, IDM_EDIT_THEME, MF_BYCOMMAND)
-                != (UINT)-1) {
-                EnableMenuItem((HMENU)wParam, IDM_EDIT_KEY,
-                               MF_BYCOMMAND | MF_GRAYED);
-                EnableMenuItem((HMENU)wParam, IDM_EDIT_SLOTS,
-                               MF_BYCOMMAND | MF_GRAYED);
-            }
+            /* Key and Slots editors do not exist yet, so they are always
+               greyed. EnableMenuItem returns -1 for a command the popup does
+               not own, which is what happens for File and Help, so no filtering
+               on the menu handle is needed. GetMenuState is avoided on purpose:
+               the Windows CE headers do not declare it. */
+            EnableMenuItem((HMENU)wParam, IDM_EDIT_KEY,
+                           MF_BYCOMMAND | MF_GRAYED);
+            EnableMenuItem((HMENU)wParam, IDM_EDIT_SLOTS,
+                           MF_BYCOMMAND | MF_GRAYED);
             break;
         case WM_CREATE:
             g_hFont     = CreateUiFont(FW_NORMAL);
